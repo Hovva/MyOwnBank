@@ -19,12 +19,13 @@ internal static class MiniAppApi
     }
 
     private static async Task<IResult> GetMenuAsync(
+        HttpContext httpContext,
         MiniAppRequest request,
         BankService bankService,
         TelegramInitDataValidator validator,
         CancellationToken cancellationToken)
     {
-        if (!TryGetUser(request.InitData, validator, out var userId, out var displayName))
+        if (!TryGetUser(httpContext, request.InitData, validator, out var userId, out var displayName))
         {
             return Results.Unauthorized();
         }
@@ -38,6 +39,7 @@ internal static class MiniAppApi
     }
 
     private static async Task<IResult> GetBankAsync(
+        HttpContext httpContext,
         Guid bankId,
         MiniAppRequest request,
         BankService bankService,
@@ -45,7 +47,7 @@ internal static class MiniAppApi
         TelegramInitDataValidator validator,
         CancellationToken cancellationToken)
     {
-        if (!TryGetUser(request.InitData, validator, out var userId, out _))
+        if (!TryGetUser(httpContext, request.InitData, validator, out var userId, out _))
         {
             return Results.Unauthorized();
         }
@@ -79,13 +81,14 @@ internal static class MiniAppApi
     }
 
     private static async Task<IResult> AddProductAsync(
+        HttpContext httpContext,
         Guid bankId,
         MiniAppAddProductRequest request,
         BankService bankService,
         TelegramInitDataValidator validator,
         CancellationToken cancellationToken)
     {
-        if (!TryGetUser(request.InitData, validator, out var userId, out _))
+        if (!TryGetUser(httpContext, request.InitData, validator, out var userId, out _))
         {
             return Results.Unauthorized();
         }
@@ -122,6 +125,7 @@ internal static class MiniAppApi
     }
 
     private static async Task<IResult> UploadTemplateAsync(
+        HttpContext httpContext,
         Guid bankId,
         HttpRequest httpRequest,
         BankService bankService,
@@ -135,7 +139,7 @@ internal static class MiniAppApi
         }
 
         var form = await httpRequest.ReadFormAsync(cancellationToken);
-        if (!TryGetUser(form["initData"].ToString(), validator, out var userId, out _))
+        if (!TryGetUser(httpContext, form["initData"].ToString(), validator, out var userId, out _))
         {
             return Results.Unauthorized();
         }
@@ -169,6 +173,7 @@ internal static class MiniAppApi
     }
 
     private static async Task<IResult> UploadMyCardImageAsync(
+        HttpContext httpContext,
         Guid bankId,
         HttpRequest httpRequest,
         BankService bankService,
@@ -182,7 +187,7 @@ internal static class MiniAppApi
         }
 
         var form = await httpRequest.ReadFormAsync(cancellationToken);
-        if (!TryGetUser(form["initData"].ToString(), validator, out var userId, out _))
+        if (!TryGetUser(httpContext, form["initData"].ToString(), validator, out var userId, out _))
         {
             return Results.Unauthorized();
         }
@@ -231,8 +236,21 @@ internal static class MiniAppApi
         return bank?.Id == bankId ? bank : null;
     }
 
-    private static bool TryGetUser(string initData, TelegramInitDataValidator validator, out long userId, out string displayName)
+    private static bool TryGetUser(
+        HttpContext httpContext,
+        string initData,
+        TelegramInitDataValidator validator,
+        out long userId,
+        out string displayName)
     {
+        var environment = httpContext.RequestServices.GetRequiredService<IHostEnvironment>();
+        if (environment.IsDevelopment() && initData == "local-dev")
+        {
+            userId = 1001;
+            displayName = "alice";
+            return true;
+        }
+
         if (validator.TryValidate(initData, out userId, out displayName))
         {
             return true;

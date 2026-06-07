@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MyOwnBank.Application.Banks;
@@ -48,25 +49,33 @@ await using (var scope = app.Services.CreateAsyncScope())
     await db.Database.EnsureCreatedAsync();
 }
 
-app.MapGet("/", () => Results.Content(TestUi.Html, MediaTypeNames.Text.Html));
-
-app.MapPost("/api/messages", async (
-    TestChatRequest request,
-    TelegramCommandRouter router,
-    CancellationToken cancellationToken) =>
+if (app.Environment.IsDevelopment())
 {
-    if (string.IsNullOrWhiteSpace(request.Command))
+    app.MapGet("/", () => Results.Content(TestUi.Html, MediaTypeNames.Text.Html));
+
+    app.MapPost("/api/messages", async (
+        TestChatRequest request,
+        TelegramCommandRouter router,
+        CancellationToken cancellationToken) =>
     {
-        return Results.BadRequest(new TestChatResponse("Введите команду."));
-    }
+        if (string.IsNullOrWhiteSpace(request.Command))
+        {
+            return Results.BadRequest(new TestChatResponse("Введите команду."));
+        }
 
-    var displayName = string.IsNullOrWhiteSpace(request.DisplayName)
-        ? $"tester-{request.UserId}"
-        : request.DisplayName.Trim();
-    var response = await router.HandleTextAsync(request.Command, request.UserId, displayName, cancellationToken);
+        var displayName = string.IsNullOrWhiteSpace(request.DisplayName)
+            ? $"tester-{request.UserId}"
+            : request.DisplayName.Trim();
+        var response = await router.HandleTextAsync(request.Command, request.UserId, displayName, cancellationToken);
 
-    return Results.Ok(new TestChatResponse(response));
-});
+        return Results.Ok(new TestChatResponse(response));
+    });
+}
+else
+{
+    app.MapGet("/", () => Results.Text("My own bank bot is running."));
+    app.MapGet("/health", () => Results.Text("bot"));
+}
 
 await app.RunAsync();
 

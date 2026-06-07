@@ -29,6 +29,8 @@ await using (var scope = app.Services.CreateAsyncScope())
     await db.Database.EnsureCreatedAsync();
 }
 
+app.MapGet("/health", () => Results.Text("miniapp"));
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
