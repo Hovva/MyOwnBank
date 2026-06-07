@@ -63,13 +63,16 @@ public sealed class SqliteBankRepository(IDbContextFactory<MyOwnBankDbContext> d
         }
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var entities = await db.BankTransactions
+        var filtered = await db.BankTransactions
             .AsNoTracking()
             .Where(transaction => transaction.BankId == bankId && transaction.CardId == cardId)
-            .OrderByDescending(transaction => transaction.OccurredAt.UtcDateTime)
+            .ToListAsync(cancellationToken);
+
+        var entities = filtered
+            .OrderByDescending(transaction => transaction.OccurredAt)
             .Skip(skip)
             .Take(take + 1)
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         var hasMore = entities.Count > take;
         if (hasMore)

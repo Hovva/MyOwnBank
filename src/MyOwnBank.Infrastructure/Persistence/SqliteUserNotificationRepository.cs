@@ -45,13 +45,16 @@ public sealed class SqliteUserNotificationRepository(IDbContextFactory<MyOwnBank
         }
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var entities = await db.UserNotifications
+        var filtered = await db.UserNotifications
             .AsNoTracking()
             .Where(item => item.RecipientTelegramUserId == recipientTelegramUserId)
-            .OrderByDescending(item => item.CreatedAt.UtcDateTime)
+            .ToListAsync(cancellationToken);
+
+        var entities = filtered
+            .OrderByDescending(item => item.CreatedAt)
             .Skip(skip)
             .Take(take + 1)
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         var hasMore = entities.Count > take;
         if (hasMore)
