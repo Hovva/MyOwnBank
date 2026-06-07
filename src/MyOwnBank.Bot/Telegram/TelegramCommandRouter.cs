@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
+using MyOwnBank.Application.Abstractions;
 using MyOwnBank.Application.Banks;
+using MyOwnBank.Application.Common;
 using MyOwnBank.Domain.Common;
 using MyOwnBank.Domain.Currencies;
 using Telegram.Bot;
@@ -8,7 +10,10 @@ using Telegram.Bot.Types;
 
 namespace MyOwnBank.Bot.Telegram;
 
-public sealed class TelegramCommandRouter(BankService bankService)
+public sealed class TelegramCommandRouter(
+    BankService bankService,
+    IUserNotificationRepository notificationRepository,
+    IClock clock)
 {
     public async Task HandleMessageAsync(ITelegramBotClient bot, Message message, CancellationToken cancellationToken)
     {
@@ -27,6 +32,21 @@ public sealed class TelegramCommandRouter(BankService bankService)
         if (response.Notification is not null)
         {
             await SendCreditNotificationAsync(bot, response.Notification, cancellationToken);
+
+            if (response.BankId is Guid bankId)
+            {
+                await notificationRepository.AddAsync(
+                    new UserNotificationRecord(
+                        Guid.NewGuid(),
+                        response.Notification.RecipientTelegramUserId,
+                        bankId,
+                        "credit",
+                        "Начисление на карту",
+                        $"На твою карту начислено {response.Notification.Amount} {response.Notification.CurrencyName} от {response.Notification.IssuerDisplayName}.",
+                        clock.UtcNow,
+                        false),
+                    cancellationToken);
+            }
         }
     }
 
@@ -173,7 +193,8 @@ public sealed class TelegramCommandRouter(BankService bankService)
 
             return new CommandResponse(
                 $"Начислено {amount} {currencyName} ({currencyCode}) на карту {ownerName}.\nБаланс: {FormatBalances(card.Balances)}",
-                creditResult.Notification);
+                creditResult.Notification,
+                creditResult.Bank.Id);
         }
 
         if (commandName == "/openshop")
@@ -273,7 +294,7 @@ public sealed class TelegramCommandRouter(BankService bankService)
         await bot.SendMessage(notification.RecipientTelegramUserId, text, cancellationToken: cancellationToken);
     }
 
-    private sealed record CommandResponse(string Text, CardCreditedNotification? Notification = null);
+    private sealed record CommandResponse(string Text, CardCreditedNotification? Notification = null, Guid? BankId = null);
 
     private static bool TryParseAmount(string raw, out decimal amount) =>
         decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out amount)

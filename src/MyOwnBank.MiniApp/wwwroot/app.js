@@ -112,6 +112,14 @@ const state = {
     memberSearch: "",
     showAddCurrency: false,
     inviteCode: null,
+    transactionsExpanded: false,
+    transactionsPage: [],
+    transactionsHasMore: false,
+    transactionsLoading: false,
+    unreadNotifications: 0,
+    notifications: [],
+    notificationsHasMore: false,
+    notificationsLoading: false,
     appSettingsReturnScreen: "menu",
     createBankReturnScreen: "menu"
 };
@@ -487,11 +495,27 @@ async function ensureSelectedBankLoaded() {
     }
 }
 
+function syncNotificationBadge() {
+    const badge = document.getElementById("notification-badge");
+    if (!badge) {
+        return;
+    }
+
+    const count = state.unreadNotifications || 0;
+    badge.textContent = count > 99 ? "99+" : String(count);
+    badge.classList.toggle("is-hidden", count <= 0);
+}
+
 function renderHeaderActions({ showNotifications = false } = {}) {
     return `
         <div class="bank-header__actions">
             ${showNotifications
-                ? `<button class="icon-button" type="button" aria-label="Уведомления">${icon("notification", { size: 20 })}</button>`
+                ? `<button class="icon-button notifications-trigger" type="button" aria-label="Уведомления">
+                    ${icon("notification", { size: 20 })}
+                    <span class="notification-badge ${state.unreadNotifications > 0 ? "" : "is-hidden"}" id="notification-badge">
+                        ${state.unreadNotifications > 99 ? "99+" : state.unreadNotifications}
+                    </span>
+                </button>`
                 : ""}
             <button class="icon-button icon-button--stroke app-settings-trigger" type="button" aria-label="Настройки приложения">
                 ${icon("settings", { size: 20 })}
@@ -701,7 +725,7 @@ async function redirectToProfile(clearLastBank = false) {
     state.memberSearch = "";
     state.showAddCurrency = false;
     state.screen = "menu";
-    state.menu = await apiPost("/api/menu");
+    applyMenuResponse(await apiPost("/api/menu"));
 
     if (state.selectedBankId && !state.menu.banks.some(bank => bank.id === state.selectedBankId)) {
         state.selectedBankId = null;
@@ -712,6 +736,41 @@ async function redirectToProfile(clearLastBank = false) {
 
 async function loadMenu(clearLastBank = false) {
     await redirectToProfile(clearLastBank);
+}
+
+function resetTransactionsState() {
+    state.transactionsExpanded = false;
+    state.transactionsPage = [];
+    state.transactionsHasMore = false;
+    state.transactionsLoading = false;
+}
+
+async function loadTransactionsPage({ reset = false } = {}) {
+    const bank = state.bank;
+    if (!bank?.id) {
+        return;
+    }
+
+    if (state.transactionsLoading) {
+        return;
+    }
+
+    state.transactionsLoading = true;
+    if (reset) {
+        state.transactionsPage = [];
+    }
+
+    try {
+        const skip = reset ? 0 : state.transactionsPage.length;
+        const result = await apiPost(`/api/banks/${bank.id}/transactions`, { skip, limit: 10 });
+        const items = result.transactions || result.Transactions || [];
+
+        state.transactionsPage = reset ? items : [...state.transactionsPage, ...items];
+        state.transactionsHasMore = Boolean(result.hasMore ?? result.HasMore);
+        state.transactionsExpanded = true;
+    } finally {
+        state.transactionsLoading = false;
+    }
 }
 
 async function loadBank(bankId) {
@@ -727,6 +786,7 @@ async function loadBank(bankId) {
     }
 
     state.selectedBankId = bankId;
+    resetTransactionsState();
     pruneCart(state.bank);
     state.screen = "bank";
     state.cardFlipped = false;
@@ -747,8 +807,49 @@ async function refreshBank() {
     }
 }
 
+function applyMenuResponse(menu) {
+    state.menu = menu;
+    state.unreadNotifications = menu?.unreadNotifications ?? menu?.UnreadNotifications ?? 0;
+}
+
+async function loadNotificationsPage({ reset = false } = {}) {
+    if (state.notificationsLoading) {
+        return;
+    }
+
+    state.notificationsLoading = true;
+    if (reset) {
+        state.notifications = [];
+    }
+
+    try {
+        const skip = reset ? 0 : state.notifications.length;
+        const result = await apiPost("/api/notifications", { skip, limit: 20 });
+        const items = result.notifications || result.Notifications || [];
+
+        state.notifications = reset ? items : [...state.notifications, ...items];
+        state.notificationsHasMore = Boolean(result.hasMore ?? result.HasMore);
+    } finally {
+        state.notificationsLoading = false;
+    }
+}
+
+async function openNotifications() {
+    state.screen = "notifications";
+    await loadNotificationsPage({ reset: true });
+
+    try {
+        await apiPost("/api/notifications/read");
+        state.unreadNotifications = 0;
+    } catch {
+        // ignore read errors, list is still shown
+    }
+
+    render();
+}
+
 async function bootstrap() {
-    state.menu = await apiPost("/api/menu");
+    applyMenuResponse(await apiPost("/api/menu"));
     if (state.menu.banks.length === 1) {
         await loadBank(state.menu.banks[0].id);
         return;
@@ -775,6 +876,7 @@ function updateNav() {
     navCart.disabled = !hasLastBank;
     navSeparators.forEach(separator => separator?.classList.toggle("is-active", hasLastBank));
     syncCartBadge();
+    syncNotificationBadge();
 }
 
 function render() {
@@ -782,6 +884,11 @@ function render() {
 
     if (state.screen === "menu") {
         renderMenu();
+        return;
+    }
+
+    if (state.screen === "notifications") {
+        renderNotifications();
         return;
     }
 
@@ -1007,7 +1114,7 @@ function renderCreateBank() {
                 await uploadCurrencyIcon(bankId, code, iconData.file);
             }
 
-            state.menu = await apiPost("/api/menu");
+            applyMenuResponse(await apiPost("/api/menu"));
             await loadBank(bankId);
         } catch (error) {
             showCreateError(error.message || "Не удалось создать банк");
@@ -1080,7 +1187,7 @@ function bindJoinForm() {
                 throw new Error("Сервер не вернул идентификатор банка.");
             }
 
-            state.menu = await apiPost("/api/menu");
+            applyMenuResponse(await apiPost("/api/menu"));
             await loadBank(bankId);
         } catch (error) {
             showError(error);
@@ -1141,6 +1248,46 @@ function renderAppSettings() {
         applyTheme(themeId);
         returnScreen();
     });
+}
+
+function renderNotifications() {
+    content.innerHTML = `
+        <button class="back-link" id="back-from-notifications" type="button">← Назад</button>
+        ${renderPageHeader({ title: "Уведомления" })}
+        <div class="panel notifications-panel">
+            ${state.notifications.length === 0 && !state.notificationsLoading
+                ? '<p class="empty">Уведомлений пока нет</p>'
+                : state.notifications.map(item => `
+                    <div class="notification-item ${item.isRead || item.IsRead ? "" : "notification-item--unread"}">
+                        <div class="notification-item__head">
+                            <strong>${escapeHtml(item.title || item.Title)}</strong>
+                            <span class="hint">${formatDate(item.createdAt || item.CreatedAt)}</span>
+                        </div>
+                        <div class="notification-item__text">${escapeHtml(item.message || item.Message)}</div>
+                    </div>`).join("")}
+            ${state.notificationsHasMore
+                ? `<button class="pill-button notifications-more-btn" id="load-more-notifications" type="button" ${state.notificationsLoading ? "disabled" : ""}>
+                    ${state.notificationsLoading ? "Загружаем…" : "Показать больше"}
+                </button>`
+                : ""}
+        </div>`;
+
+    document.getElementById("back-from-notifications").addEventListener("click", () => {
+        state.screen = state.selectedBankId ? "bank" : "menu";
+        render();
+    });
+
+    const loadMoreButton = document.getElementById("load-more-notifications");
+    if (loadMoreButton) {
+        loadMoreButton.addEventListener("click", async () => {
+            try {
+                await loadNotificationsPage();
+                render();
+            } catch (error) {
+                showError(error);
+            }
+        });
+    }
 }
 
 function renderMenu() {
@@ -1236,7 +1383,8 @@ function renderBank() {
         : `<div class="credit-card-pattern"></div>`;
     const cardInner = `${cardBackground}<div class="credit-card-chip" aria-hidden="true"></div>`;
 
-    const lastTx = bank.transactions[0];
+    const recentTransactions = bank.transactions || [];
+    const hasMoreTransactions = Boolean(bank.hasMoreTransactions ?? bank.HasMoreTransactions);
 
     content.innerHTML = `
         <div class="card-carousel">
@@ -1288,37 +1436,56 @@ function renderBank() {
             ${renderCardBalances(bank)}
         </div>
 
-        ${lastTx ? `
         <div class="panel">
-            <h2 class="section-title">Последняя операция</h2>
-            <div class="highlight-card">
-                <div class="highlight-text">${formatTransaction(lastTx)}</div>
-            </div>
-        </div>` : ""}
+            <h2 class="section-title">Последние операции</h2>
+            ${recentTransactions.length === 0
+                ? '<p class="empty">Операций пока нет</p>'
+                : recentTransactions.map(tx => renderTransactionItem(tx, bank)).join("")}
+            ${recentTransactions.length > 0 && hasMoreTransactions && !state.transactionsExpanded
+                ? `<button class="pill-button transactions-toggle-btn" id="toggle-all-transactions" type="button" ${state.transactionsLoading ? "disabled" : ""}>
+                    ${state.transactionsLoading ? "Загружаем…" : "Все операции"}
+                </button>`
+                : ""}
+        </div>
 
+        ${state.transactionsExpanded ? `
         <div class="panel">
             <h2 class="section-title">Все операции</h2>
-            ${bank.transactions.length === 0
+            ${state.transactionsPage.length === 0 && !state.transactionsLoading
                 ? '<p class="empty">Операций пока нет</p>'
-                : bank.transactions.map(tx => {
-                    const txMeta = getCurrencyMeta(bank, tx.currencyCode);
-                    return `
-                    <div class="tx-item">
-                        <div class="tx-left">
-                            <div class="debt-icon debt-icon--${txMeta.bar}">${renderCurrencyIconDisplay(txMeta.icon, "debt-icon__graphic")}</div>
-                            <div>
-                                <div>${escapeHtml(tx.description)}</div>
-                                <div class="hint">${formatDate(tx.occurredAt)}</div>
-                            </div>
-                        </div>
-                        <div class="tx-amount ${tx.amount >= 0 ? "positive" : "negative"}">
-                            ${tx.amount >= 0 ? "+" : ""}${tx.amount}
-                        </div>
-                    </div>`;
-                }).join("")}
-        </div>`;
+                : state.transactionsPage.map(tx => renderTransactionItem(tx, bank)).join("")}
+            ${state.transactionsHasMore
+                ? `<button class="pill-button transactions-more-btn" id="load-more-transactions" type="button" ${state.transactionsLoading ? "disabled" : ""}>
+                    ${state.transactionsLoading ? "Загружаем…" : "Показать больше"}
+                </button>`
+                : ""}
+        </div>` : ""}`;
 
     document.getElementById("change-card-photo").addEventListener("click", () => fileMyCard.click());
+
+    const toggleAllTransactions = document.getElementById("toggle-all-transactions");
+    if (toggleAllTransactions) {
+        toggleAllTransactions.addEventListener("click", async () => {
+            try {
+                await loadTransactionsPage({ reset: true });
+                render();
+            } catch (error) {
+                showError(error);
+            }
+        });
+    }
+
+    const loadMoreTransactions = document.getElementById("load-more-transactions");
+    if (loadMoreTransactions) {
+        loadMoreTransactions.addEventListener("click", async () => {
+            try {
+                await loadTransactionsPage();
+                render();
+            } catch (error) {
+                showError(error);
+            }
+        });
+    }
 
     const cardFlip = document.getElementById("card-flip");
     cardFlip.addEventListener("click", event => {
@@ -2312,6 +2479,23 @@ function renderFineAdd() {
     });
 }
 
+function renderTransactionItem(tx, bank = state.bank) {
+    const txMeta = getCurrencyMeta(bank, tx.currencyCode);
+    return `
+        <div class="tx-item">
+            <div class="tx-left">
+                <div class="debt-icon debt-icon--${txMeta.bar}">${renderCurrencyIconDisplay(txMeta.icon, "debt-icon__graphic")}</div>
+                <div>
+                    <div>${escapeHtml(tx.description)}</div>
+                    <div class="hint">${formatDate(tx.occurredAt)}</div>
+                </div>
+            </div>
+            <div class="tx-amount ${tx.amount >= 0 ? "positive" : "negative"}">
+                ${tx.amount >= 0 ? "+" : ""}${tx.amount}
+            </div>
+        </div>`;
+}
+
 function formatTransaction(tx) {
     const meta = getCurrencyMeta(state.bank, tx.currencyCode);
     const sign = tx.amount >= 0 ? "+" : "";
@@ -2344,6 +2528,11 @@ function escapeHtml(value) {
 }
 
 content.addEventListener("click", event => {
+    if (event.target.closest(".notifications-trigger")) {
+        openNotifications().catch(showError);
+        return;
+    }
+
     if (event.target.closest(".app-settings-trigger")) {
         openAppSettings();
     }

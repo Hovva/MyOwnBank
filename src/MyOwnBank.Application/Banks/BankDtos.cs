@@ -39,6 +39,10 @@ public sealed record TransactionSummary(
     string Description,
     DateTimeOffset OccurredAt);
 
+public sealed record TransactionsPageResult(
+    IReadOnlyCollection<TransactionSummary> Transactions,
+    bool HasMore);
+
 public sealed record InviteCodeResult(string Code, DateTimeOffset ExpiresAt);
 
 public sealed record CardCreditedNotification(

@@ -20,6 +20,7 @@ builder.Services
     .AddSingleton<BankService>()
     .AddSingleton<TelegramInitDataValidator>()
     .AddSingleton<TelegramNotificationSender>()
+    .AddSingleton<NotificationDeliveryService>()
     .AddSingleton<CardImageStorage>();
 
 var app = builder.Build();

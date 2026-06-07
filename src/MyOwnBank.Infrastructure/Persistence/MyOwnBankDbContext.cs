@@ -9,6 +9,10 @@ public sealed class MyOwnBankDbContext(DbContextOptions<MyOwnBankDbContext> opti
 
     public DbSet<InvitationEntity> Invitations => Set<InvitationEntity>();
 
+    public DbSet<BankTransactionEntity> BankTransactions => Set<BankTransactionEntity>();
+
+    public DbSet<UserNotificationEntity> UserNotifications => Set<UserNotificationEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<BankEntity>(entity =>
@@ -91,6 +95,17 @@ public sealed class MyOwnBankDbContext(DbContextOptions<MyOwnBankDbContext> opti
             entity.HasKey(item => item.Code);
             entity.Property(item => item.Code).HasMaxLength(16);
             entity.HasIndex(item => item.BankId);
+        });
+
+        modelBuilder.Entity<UserNotificationEntity>(entity =>
+        {
+            entity.ToTable("user_notifications");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.RecipientTelegramUserId, item.CreatedAt });
+            entity.HasIndex(item => new { item.RecipientTelegramUserId, item.IsRead });
+            entity.Property(item => item.Type).HasMaxLength(32);
+            entity.Property(item => item.Title).HasMaxLength(128);
+            entity.Property(item => item.Message).HasMaxLength(512);
         });
     }
 }

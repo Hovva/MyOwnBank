@@ -15,6 +15,7 @@ public static class DependencyInjection
         services.AddDbContextFactory<MyOwnBankDbContext>(options => options.UseSqlite(connectionString));
         services.AddSingleton<IBankRepository, SqliteBankRepository>();
         services.AddSingleton<IInvitationRepository, SqliteInvitationRepository>();
+        services.AddSingleton<IUserNotificationRepository, SqliteUserNotificationRepository>();
 
         return services;
     }

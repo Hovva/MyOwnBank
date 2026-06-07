@@ -20,6 +20,41 @@ public static class DatabaseSchemaUpdater
         await BackfillCurrencyIconsAsync(dbContext, cancellationToken);
 
         await EnsureColumnAsync(dbContext, "shop_products", "Description", "TEXT NULL", cancellationToken);
+        await EnsureUserNotificationsTableAsync(dbContext, cancellationToken);
+    }
+
+    private static async Task EnsureUserNotificationsTableAsync(
+        MyOwnBankDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS user_notifications (
+                Id TEXT NOT NULL PRIMARY KEY,
+                RecipientTelegramUserId INTEGER NOT NULL,
+                BankId TEXT NOT NULL,
+                Type TEXT NOT NULL,
+                Title TEXT NOT NULL,
+                Message TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                IsRead INTEGER NOT NULL DEFAULT 0
+            );
+            """,
+            cancellationToken);
+
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_user_notifications_RecipientTelegramUserId_CreatedAt
+            ON user_notifications (RecipientTelegramUserId, CreatedAt);
+            """,
+            cancellationToken);
+
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_user_notifications_RecipientTelegramUserId_IsRead
+            ON user_notifications (RecipientTelegramUserId, IsRead);
+            """,
+            cancellationToken);
     }
 
     private static async Task EnsureColumnAsync(

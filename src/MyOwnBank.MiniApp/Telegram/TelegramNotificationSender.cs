@@ -10,6 +10,34 @@ public sealed class TelegramNotificationSender(
     IOptions<TelegramBotOptions> options,
     ILogger<TelegramNotificationSender> logger)
 {
+    public async Task SendCreditNotificationAsync(
+        CardCreditedNotification notification,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(options.Value.Token))
+        {
+            return;
+        }
+
+        try
+        {
+            var bot = new TelegramBotClient(options.Value.Token);
+            var text =
+                $"""
+                 💳 На твою карту начислено {notification.Amount} {notification.CurrencyName} ({notification.CurrencyCode})
+                 от {notification.IssuerDisplayName}.
+
+                 Баланс: {FormatBalances(notification.NewBalances)}
+                 """;
+
+            await bot.SendMessage(notification.RecipientTelegramUserId, text, cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to send credit notification to {RecipientId}", notification.RecipientTelegramUserId);
+        }
+    }
+
     public async Task SendPurchaseNotificationAsync(
         ProductPurchasedNotification notification,
         CancellationToken cancellationToken)

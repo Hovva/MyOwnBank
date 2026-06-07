@@ -3,6 +3,7 @@ using MyOwnBank.Application.Common;
 using MyOwnBank.Domain.Banks;
 using MyOwnBank.Domain.Common;
 using MyOwnBank.Domain.Currencies;
+using MyOwnBank.Domain.Transactions;
 
 namespace MyOwnBank.Application.Banks;
 
@@ -36,6 +37,35 @@ public sealed class BankService(
     {
         var bank = await repository.GetByTelegramUserIdAsync(telegramUserId, cancellationToken);
         return bank is null ? null : ToSummary(bank);
+    }
+
+    public async Task<BankSummary?> GetMyBankLiteAsync(long telegramUserId, CancellationToken cancellationToken)
+    {
+        var bank = await repository.GetByTelegramUserIdLiteAsync(telegramUserId, cancellationToken);
+        return bank is null ? null : ToSummary(bank);
+    }
+
+    public async Task<TransactionsPageResult> GetCardTransactionsPageAsync(
+        long telegramUserId,
+        Guid bankId,
+        int skip,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var bank = await repository.GetByIdLiteAsync(bankId, cancellationToken)
+            ?? throw new InvalidOperationException($"Bank '{bankId}' was not found.");
+
+        if (!bank.Members.Any(member => member.TelegramUserId == telegramUserId))
+        {
+            throw new InvalidOperationException("You are not a member of this bank.");
+        }
+
+        var card = bank.GetCardForMember(telegramUserId);
+        var page = await repository.GetCardTransactionsPageAsync(bankId, card.Id, skip, take, cancellationToken);
+
+        return new TransactionsPageResult(
+            page.Transactions.Select(ToTransactionSummary).ToArray(),
+            page.HasMore);
     }
 
     public async Task<InviteCodeResult> CreateInviteCodeAsync(CreateInviteCodeCommand command, CancellationToken cancellationToken)
@@ -120,7 +150,7 @@ public sealed class BankService(
                 targetMember.TelegramUserId,
                 issuer.DisplayName,
                 command.CurrencyCode,
-                GetCurrencyName(command.CurrencyCode),
+                ResolveCurrencyName(bank, command.CurrencyCode),
                 command.Amount,
                 card.Balances);
 
@@ -318,14 +348,11 @@ public sealed class BankService(
 
     public async Task<IReadOnlyCollection<TransactionSummary>> GetHistoryAsync(long telegramUserId, CancellationToken cancellationToken)
     {
-        var bank = await GetUserBank(telegramUserId, cancellationToken);
-        var card = bank.GetCardForMember(telegramUserId);
+        var bank = await repository.GetByTelegramUserIdLiteAsync(telegramUserId, cancellationToken)
+            ?? throw new InvalidOperationException("You do not have a bank yet. Use /newbank <name> or /join <code>.");
 
-        return ToSummary(bank).Transactions
-            .Where(transaction => transaction.CardId == card.Id)
-            .OrderByDescending(transaction => transaction.OccurredAt)
-            .Take(10)
-            .ToArray();
+        var page = await GetCardTransactionsPageAsync(telegramUserId, bank.Id, 0, 10, cancellationToken);
+        return page.Transactions;
     }
 
     private async Task<Bank> GetBank(Guid bankId, CancellationToken cancellationToken) =>
@@ -443,13 +470,16 @@ public sealed class BankService(
                 .ToArray() ?? [],
             bank.Transactions
                 .OrderByDescending(transaction => transaction.OccurredAt)
-                .Select(transaction => new TransactionSummary(
-                    transaction.Id,
-                    transaction.CardId,
-                    transaction.Type,
-                    transaction.CurrencyCode,
-                    transaction.Amount,
-                    transaction.Description,
-                    transaction.OccurredAt))
+                .Select(ToTransactionSummary)
                 .ToArray());
+
+    private static TransactionSummary ToTransactionSummary(BankTransaction transaction) =>
+        new(
+            transaction.Id,
+            transaction.CardId,
+            transaction.Type,
+            transaction.CurrencyCode,
+            transaction.Amount,
+            transaction.Description,
+            transaction.OccurredAt);
 }

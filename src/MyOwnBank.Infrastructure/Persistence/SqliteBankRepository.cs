@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MyOwnBank.Application.Abstractions;
 using MyOwnBank.Domain.Banks;
+using MyOwnBank.Domain.Transactions;
 
 namespace MyOwnBank.Infrastructure.Persistence;
 
@@ -16,7 +17,16 @@ public sealed class SqliteBankRepository(IDbContextFactory<MyOwnBankDbContext> d
     public async Task<Bank?> GetByIdAsync(Guid bankId, CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await Query(db)
+        var entity = await QueryFull(db)
+            .SingleOrDefaultAsync(bank => bank.Id == bankId, cancellationToken);
+
+        return entity is null ? null : BankMapper.ToDomain(entity);
+    }
+
+    public async Task<Bank?> GetByIdLiteAsync(Guid bankId, CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var entity = await QueryLite(db)
             .SingleOrDefaultAsync(bank => bank.Id == bankId, cancellationToken);
 
         return entity is null ? null : BankMapper.ToDomain(entity);
@@ -25,10 +35,61 @@ public sealed class SqliteBankRepository(IDbContextFactory<MyOwnBankDbContext> d
     public async Task<Bank?> GetByTelegramUserIdAsync(long telegramUserId, CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await Query(db)
+        var entity = await QueryFull(db)
             .SingleOrDefaultAsync(bank => bank.Members.Any(member => member.TelegramUserId == telegramUserId), cancellationToken);
 
         return entity is null ? null : BankMapper.ToDomain(entity);
+    }
+
+    public async Task<Bank?> GetByTelegramUserIdLiteAsync(long telegramUserId, CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var entity = await QueryLite(db)
+            .SingleOrDefaultAsync(bank => bank.Members.Any(member => member.TelegramUserId == telegramUserId), cancellationToken);
+
+        return entity is null ? null : BankMapper.ToDomain(entity);
+    }
+
+    public async Task<(IReadOnlyList<BankTransaction> Transactions, bool HasMore)> GetCardTransactionsPageAsync(
+        Guid bankId,
+        Guid cardId,
+        int skip,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        if (take <= 0)
+        {
+            return ([], false);
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var entities = await db.BankTransactions
+            .AsNoTracking()
+            .Where(transaction => transaction.BankId == bankId && transaction.CardId == cardId)
+            .OrderByDescending(transaction => transaction.OccurredAt)
+            .Skip(skip)
+            .Take(take + 1)
+            .ToListAsync(cancellationToken);
+
+        var hasMore = entities.Count > take;
+        if (hasMore)
+        {
+            entities.RemoveAt(entities.Count - 1);
+        }
+
+        var transactions = entities
+            .Select(item => BankTransaction.Rehydrate(
+                item.Id,
+                item.BankId,
+                item.CardId,
+                item.Type,
+                item.CurrencyCode,
+                item.Amount,
+                item.Description,
+                item.OccurredAt))
+            .ToArray();
+
+        return (transactions, hasMore);
     }
 
     public async Task SaveAsync(Bank bank, CancellationToken cancellationToken)
@@ -69,7 +130,7 @@ public sealed class SqliteBankRepository(IDbContextFactory<MyOwnBankDbContext> d
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private static IQueryable<Entities.BankEntity> Query(MyOwnBankDbContext db) =>
+    private static IQueryable<Entities.BankEntity> QueryLite(MyOwnBankDbContext db) =>
         db.Banks
             .AsNoTracking()
             .Include(bank => bank.Currencies)
@@ -77,6 +138,8 @@ public sealed class SqliteBankRepository(IDbContextFactory<MyOwnBankDbContext> d
             .Include(bank => bank.Cards)
             .ThenInclude(card => card.Balances)
             .Include(bank => bank.Shop)
-            .ThenInclude(shop => shop!.Products)
-            .Include(bank => bank.Transactions);
+            .ThenInclude(shop => shop!.Products);
+
+    private static IQueryable<Entities.BankEntity> QueryFull(MyOwnBankDbContext db) =>
+        QueryLite(db).Include(bank => bank.Transactions);
 }
