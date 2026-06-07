@@ -3,6 +3,10 @@
 **/bin
 **/obj
 **/artifacts
+**/publish
+tests/
+bin/
+publish/
 **/*.db
 **/*.user
 **/*.suo
