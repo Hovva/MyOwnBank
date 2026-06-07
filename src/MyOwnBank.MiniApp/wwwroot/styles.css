@@ -1,0 +1,117 @@
+:root {
+    color-scheme: light dark;
+    --bg: var(--tg-theme-bg-color, #f4f4f5);
+    --text: var(--tg-theme-text-color, #111827);
+    --hint: var(--tg-theme-hint-color, #6b7280);
+    --accent: var(--tg-theme-button-color, #2563eb);
+    --accent-text: var(--tg-theme-button-text-color, #ffffff);
+    --secondary: var(--tg-theme-secondary-bg-color, #ffffff);
+    --border: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+}
+
+.header {
+    padding: 16px 16px 8px;
+}
+
+.header h1 {
+    margin: 0 0 4px;
+    font-size: 1.25rem;
+}
+
+.muted {
+    margin: 0;
+    color: var(--hint);
+    font-size: 0.9rem;
+}
+
+.content {
+    padding: 8px 16px 88px;
+}
+
+.card {
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 12px;
+}
+
+.card h2 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+}
+
+.balance-grid {
+    display: grid;
+    gap: 8px;
+}
+
+.balance-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 8%, var(--secondary));
+}
+
+.product, .transaction {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.product:last-child, .transaction:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    background: var(--secondary);
+    border-top: 1px solid var(--border);
+}
+
+.tab {
+    border: none;
+    border-radius: 12px;
+    padding: 10px 8px;
+    background: transparent;
+    color: var(--hint);
+    font-size: 0.85rem;
+}
+
+.tab.active {
+    background: color-mix(in srgb, var(--accent) 12%, var(--secondary));
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.loader, .empty {
+    color: var(--hint);
+    text-align: center;
+    padding: 24px 8px;
+}
+
+.error {
+    color: #dc2626;
+    text-align: center;
+    padding: 24px 8px;
+}

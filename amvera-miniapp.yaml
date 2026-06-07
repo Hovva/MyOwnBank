@@ -1,0 +1,13 @@
+meta:
+  environment: dotnet
+  toolchain:
+    name: dotnet
+    version: "10"
+
+build:
+  additionalCommands: dotnet publish src/MyOwnBank.MiniApp/MyOwnBank.MiniApp.csproj -c Release -o ./publish
+
+run:
+  persistenceMount: /data
+  containerPort: 8080
+  command: dotnet MyOwnBank.MiniApp.dll

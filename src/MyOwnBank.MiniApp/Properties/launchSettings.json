@@ -1,13 +1,14 @@
 {
   "profiles": {
-    "MyOwnBank.Bot": {
+    "MyOwnBank.MiniApp": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": true,
-      "applicationUrl": "http://localhost:5218",
+      "applicationUrl": "http://localhost:5219",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
-        "ConnectionStrings__MyOwnBank": "Data Source=my-own-bank.db"
+        "ConnectionStrings__MyOwnBank": "Data Source=my-own-bank.db",
+        "TelegramBot__Token": ""
       }
     }
   }

@@ -8,14 +8,15 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MyOwnBank.Application.Banks;
 using MyOwnBank.Bot.Options;
+using MyOwnBank.Bot.Persistence;
 using MyOwnBank.Bot.Telegram;
 using MyOwnBank.Infrastructure;
 using MyOwnBank.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("MyOwnBank")
-    ?? "Data Source=my-own-bank.db";
+var connectionString = PersistencePaths.ResolveDatabaseConnectionString(builder.Configuration);
+PersistencePaths.EnsureDatabaseDirectory(connectionString);
 
 builder.Services
     .Configure<TelegramBotOptions>(builder.Configuration.GetSection(TelegramBotOptions.SectionName))
@@ -37,6 +38,8 @@ else
 {
     startupLogger.LogInformation("Telegram token is configured. Waiting for BankBotWorker to start polling...");
 }
+
+startupLogger.LogInformation("SQLite database: {ConnectionString}", connectionString);
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
