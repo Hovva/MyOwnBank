@@ -12,7 +12,8 @@ const AppIcons = (() => {
         "settings",
         "attention",
         "empty-cart",
-        "search"
+        "search",
+        "copy"
     ];
 
     const cache = new Map();

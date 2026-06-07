@@ -127,6 +127,33 @@ public sealed class BankService(
         return new CreditResult(ToSummary(bank), notification);
     }
 
+    public async Task<FineResult> FineMemberCardAsync(FineMemberCardCommand command, CancellationToken cancellationToken)
+    {
+        var bank = await GetUserBank(command.IssuerTelegramUserId, cancellationToken);
+        bank.EnsureOwner(command.IssuerTelegramUserId);
+        var issuer = bank.GetMember(command.IssuerTelegramUserId);
+        var targetMember = FindMember(bank, command.TargetMember);
+        var card = bank.Cards.SingleOrDefault(item => item.OwnerMemberId == targetMember.Id)
+            ?? bank.IssueCard(targetMember.Id, clock.UtcNow);
+
+        bank.FineCard(card.Id, new Money(command.CurrencyCode, command.Amount), clock.UtcNow, targetMember.DisplayName, command.Reason);
+
+        await repository.SaveAsync(bank, cancellationToken);
+
+        CardFinedNotification? notification = targetMember.TelegramUserId == command.IssuerTelegramUserId
+            ? null
+            : new CardFinedNotification(
+                targetMember.TelegramUserId,
+                issuer.DisplayName,
+                command.CurrencyCode,
+                ResolveCurrencyName(bank, command.CurrencyCode),
+                command.Amount,
+                command.Reason.Trim(),
+                card.Balances);
+
+        return new FineResult(ToSummary(bank), notification);
+    }
+
     public async Task OpenShopAsync(OpenShopCommand command, CancellationToken cancellationToken)
     {
         var bank = await GetUserBank(command.TelegramUserId, cancellationToken);

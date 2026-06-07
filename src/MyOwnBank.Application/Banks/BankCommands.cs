@@ -20,6 +20,13 @@ public sealed record CreditMemberCardCommand(long IssuerTelegramUserId, string T
 
 public sealed record CreditCardCommand(Guid BankId, Guid CardId, string CurrencyCode, decimal Amount);
 
+public sealed record FineMemberCardCommand(
+    long IssuerTelegramUserId,
+    string TargetMember,
+    string CurrencyCode,
+    decimal Amount,
+    string Reason);
+
 public sealed record OpenShopCommand(long TelegramUserId);
 
 public sealed record AddProductCommand(long TelegramUserId, string Name, string CurrencyCode, decimal Price, string? Description = null);

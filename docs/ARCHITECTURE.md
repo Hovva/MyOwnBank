@@ -202,6 +202,7 @@ sequenceDiagram
 | `POST /api/banks/{id}/products/delete` | владелец | Архивировать товар |
 | `POST /api/banks/{id}/buy` | участник | Купить список товаров |
 | `POST /api/banks/{id}/credit` | владелец | Начислить валюту участнику |
+| `POST /api/banks/{id}/fine` | владелец | Списать штраф с карты участника (валюта, сумма, причина) |
 | `POST /api/banks/{id}/currencies` | владелец | Добавить валюту |
 | `POST /api/banks/{id}/currency` | владелец | Обновить имя/иконку валюты |
 | `POST /api/banks/{id}/currencies/{code}/icon` | владелец | Загрузить PNG иконки валюты |

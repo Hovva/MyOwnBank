@@ -37,4 +37,37 @@ public sealed class TelegramNotificationSender(
             logger.LogWarning(ex, "Failed to send purchase notification to {OwnerId}", notification.OwnerTelegramUserId);
         }
     }
+
+    public async Task SendFineNotificationAsync(
+        CardFinedNotification notification,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(options.Value.Token))
+        {
+            return;
+        }
+
+        try
+        {
+            var bot = new TelegramBotClient(options.Value.Token);
+            var text =
+                $"""
+                 ⚠️ С твоей карты списано {notification.Amount} {notification.CurrencyName} ({notification.CurrencyCode})
+                 от {notification.IssuerDisplayName}.
+
+                 Причина: {notification.Reason}
+
+                 Баланс: {FormatBalances(notification.NewBalances)}
+                 """;
+
+            await bot.SendMessage(notification.RecipientTelegramUserId, text, cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to send fine notification to {RecipientId}", notification.RecipientTelegramUserId);
+        }
+    }
+
+    private static string FormatBalances(IReadOnlyDictionary<string, decimal> balances) =>
+        string.Join(", ", balances.Select(pair => $"{pair.Key}={pair.Value}"));
 }

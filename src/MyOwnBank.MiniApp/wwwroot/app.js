@@ -108,8 +108,10 @@ const state = {
     selectedBankId: null,
     cardFlipped: false,
     creditMember: null,
+    fineMember: null,
     memberSearch: "",
     showAddCurrency: false,
+    inviteCode: null,
     appSettingsReturnScreen: "menu",
     createBankReturnScreen: "menu"
 };
@@ -825,6 +827,16 @@ function render() {
 
     if (state.screen === "credit-add") {
         renderCreditAdd();
+        return;
+    }
+
+    if (state.screen === "fine-users") {
+        renderFineUsers();
+        return;
+    }
+
+    if (state.screen === "fine-add") {
+        renderFineAdd();
     }
 }
 
@@ -847,6 +859,18 @@ function formatMemberBalances(bank, balances) {
             return `${formatCurrencyIconText(meta.icon)} ${amount}`;
         })
         .join(" · ");
+}
+
+function renderMemberBalances(bank, balances) {
+    const chips = (bank.currencies || [])
+        .map(currency => {
+            const meta = getCurrencyMeta(bank, currency.code);
+            const amount = balances?.[currency.code] ?? 0;
+            return `<span class="balance-chip">${renderCurrencyIconDisplay(meta.icon, "balance-chip__icon")}<span class="balance-chip__amount">${amount}</span></span>`;
+        })
+        .join("");
+
+    return `<div class="balance-chips">${chips}</div>`;
 }
 
 function renderJoinField() {
@@ -1342,6 +1366,7 @@ function renderBank() {
     const settingsButton = document.getElementById("open-settings");
     if (settingsButton) {
         settingsButton.addEventListener("click", () => {
+            state.inviteCode = null;
             state.screen = "settings";
             render();
         });
@@ -1617,6 +1642,38 @@ function renderSettings() {
 
         <div class="panel compact-panel">
             <div class="compact-panel__text">
+                <span class="compact-panel__title">Штрафы</span>
+                <span class="compact-panel__hint">Списать валюту с карты участника.</span>
+            </div>
+            <button class="pill-button danger compact-panel__btn" id="open-fine-users" type="button">
+                ${icon("attention", { size: 16, color: "var(--danger)" })}
+                Штраф
+            </button>
+        </div>
+
+        <div class="panel invite-panel">
+            <div class="invite-panel__head">
+                <div class="compact-panel__text">
+                    <span class="compact-panel__title">Код приглашения</span>
+                    <span class="compact-panel__hint">Поделись кодом, чтобы пригласить участника.</span>
+                </div>
+                <button class="pill-button primary compact-panel__btn" id="create-invite-btn" type="button">
+                    ${icon("add", { size: 16, color: "#fff" })}
+                    Создать
+                </button>
+            </div>
+            ${state.inviteCode ? `
+            <div class="invite-result">
+                <button class="invite-code" id="copy-invite-btn" type="button" title="Скопировать">
+                    <span class="invite-code__value">${escapeHtml(state.inviteCode.code)}</span>
+                    ${icon("copy", { size: 16, color: "var(--text-muted, #888)" })}
+                </button>
+                <span class="compact-panel__hint">Действует до ${escapeHtml(formatDate(state.inviteCode.expiresAt))}</span>
+            </div>` : ""}
+        </div>
+
+        <div class="panel compact-panel">
+            <div class="compact-panel__text">
                 <span class="compact-panel__title">Шаблон карты</span>
                 <span class="compact-panel__hint">Картинка для новых карт.</span>
             </div>
@@ -1653,9 +1710,8 @@ function renderSettings() {
             ${(bank.currencies || []).length < (bank.maxCurrencies || 4)
                 ? (state.showAddCurrency
                     ? `<form class="currency-add-form" id="add-currency-form">
-                            <input name="code" placeholder="Код (stars)" required pattern="[A-Za-z0-9_-]{2,32}">
-                            <input name="name" placeholder="Название" required maxlength="64">
-                            <input name="icon" type="text" maxlength="8" placeholder="⭐" required>
+                            ${renderCurrencyIconPicker({ id: "add-currency-icon", value: "⭐" })}
+                            <input class="currency-row__name" name="name" type="text" placeholder="Название" required maxlength="64">
                             <button class="pill-button primary pill-button--sm" type="submit">Добавить</button>
                        </form>`
                     : `<button class="pill-button primary pill-button--sm add-currency-trigger" id="toggle-add-currency" type="button">
@@ -1692,12 +1748,67 @@ function renderSettings() {
 
     document.getElementById("open-credit-users").addEventListener("click", () => {
         state.creditMember = null;
+        state.fineMember = null;
         state.memberSearch = "";
         state.screen = "credit-users";
         render();
     });
 
+    document.getElementById("open-fine-users").addEventListener("click", () => {
+        state.fineMember = null;
+        state.creditMember = null;
+        state.memberSearch = "";
+        state.screen = "fine-users";
+        render();
+    });
+
     document.getElementById("upload-template-btn").addEventListener("click", () => fileTemplate.click());
+
+    const createInviteBtn = document.getElementById("create-invite-btn");
+    if (createInviteBtn) {
+        createInviteBtn.addEventListener("click", async () => {
+            createInviteBtn.disabled = true;
+            try {
+                const result = await apiPost(`/api/banks/${bank.id}/invite`);
+                state.inviteCode = {
+                    code: result.code || result.Code,
+                    expiresAt: result.expiresAt || result.ExpiresAt
+                };
+                renderSettings();
+            } catch (error) {
+                createInviteBtn.disabled = false;
+                showError(error);
+            }
+        });
+    }
+
+    const copyInviteBtn = document.getElementById("copy-invite-btn");
+    if (copyInviteBtn) {
+        copyInviteBtn.addEventListener("click", async () => {
+            const code = state.inviteCode?.code;
+            if (!code) {
+                return;
+            }
+
+            try {
+                await navigator.clipboard.writeText(code);
+            } catch {
+                const range = document.createElement("textarea");
+                range.value = code;
+                document.body.appendChild(range);
+                range.select();
+                document.execCommand("copy");
+                range.remove();
+            }
+
+            if (tg?.HapticFeedback?.notificationOccurred) {
+                tg.HapticFeedback.notificationOccurred("success");
+            }
+
+            copyInviteBtn.classList.add("invite-code--copied");
+            setTimeout(() => copyInviteBtn.classList.remove("invite-code--copied"), 1200);
+        });
+    }
 
     bindCurrencyIconPickers(content);
 
@@ -1714,13 +1825,27 @@ function renderSettings() {
         addCurrencyForm.addEventListener("submit", async event => {
             event.preventDefault();
             const data = new FormData(event.target);
+            const name = data.get("name")?.toString().trim();
+            if (!name) {
+                return;
+            }
+
+            const iconPicker = addCurrencyForm.querySelector(".currency-icon-picker");
+            const iconData = iconPicker ? readCurrencyIconPicker(iconPicker) : { type: "emoji", value: "⭐" };
+            const code = buildCurrencyCode(name);
+            const fallbackIcon = iconData.type === "url" ? iconData.url : (iconData.type === "emoji" ? iconData.value : "⭐");
 
             try {
                 await apiPost(`/api/banks/${bank.id}/currencies`, {
-                    code: data.get("code"),
-                    name: data.get("name"),
-                    icon: data.get("icon")
+                    code,
+                    name,
+                    icon: fallbackIcon
                 });
+
+                if (iconData.type === "file") {
+                    await uploadCurrencyIcon(bank.id, code, iconData.file);
+                }
+
                 state.showAddCurrency = false;
                 await refreshBank();
                 state.screen = "settings";
@@ -1931,7 +2056,7 @@ function renderCreditUsers() {
                             ${member.isOwner ? '<span class="owner-badge">Owner</span>' : ""}
                         </div>
                         <div class="hint">id: ${member.telegramUserId}</div>
-                        <div class="member-card__balances">${escapeHtml(formatMemberBalances(bank, member.balances))}</div>
+                        <div class="member-card__balances">${renderMemberBalances(bank, member.balances)}</div>
                     </button>`).join("")}
         </div>
 
@@ -1986,7 +2111,7 @@ function renderCreditAdd() {
             <div>
                 <strong>${escapeHtml(member.displayName)}</strong>
                 <div class="hint">id: ${member.telegramUserId}</div>
-                <div class="hint">${escapeHtml(formatMemberBalances(bank, member.balances))}</div>
+                <div class="member-card__balances">${renderMemberBalances(bank, member.balances)}</div>
             </div>
         </div>
 
@@ -2029,6 +2154,157 @@ function renderCreditAdd() {
             await refreshBank();
             state.creditMember = (state.bank.members || []).find(item => item.telegramUserId === member.telegramUserId) || null;
             state.screen = "credit-users";
+            render();
+        } catch (error) {
+            showError(error);
+        }
+    });
+}
+
+function renderFineUsers() {
+    const bank = state.bank;
+    if (!bank?.canManage) {
+        content.innerHTML = '<p class="hint">Штрафы доступны только создателю банка.</p>';
+        return;
+    }
+
+    const members = filterMembers(bank.members || [], state.memberSearch);
+
+    content.innerHTML = `
+        <button class="back-link" id="back-to-settings" type="button">← Управление</button>
+        <h2 class="section-title">Штраф — участник</h2>
+
+        <div class="search-field">
+            <span class="search-field__icon">${icon("search", { size: 20 })}</span>
+            <input
+                id="member-search"
+                type="search"
+                placeholder="Поиск по user id или имени"
+                value="${escapeHtml(state.memberSearch)}"
+                autocomplete="off">
+        </div>
+
+        <div class="member-list">
+            ${members.length === 0
+                ? '<p class="hint">Никого не нашли. Попробуй другой запрос.</p>'
+                : members.map(member => `
+                    <button
+                        class="member-card ${state.fineMember?.telegramUserId === member.telegramUserId ? "selected" : ""}"
+                        type="button"
+                        data-member-id="${member.telegramUserId}">
+                        <div class="member-card__head">
+                            <strong>${escapeHtml(member.displayName)}</strong>
+                            ${member.isOwner ? '<span class="owner-badge">Owner</span>' : ""}
+                        </div>
+                        <div class="hint">id: ${member.telegramUserId}</div>
+                        <div class="member-card__balances">${renderMemberBalances(bank, member.balances)}</div>
+                    </button>`).join("")}
+        </div>
+
+        <button class="submit-button fine-next-btn" id="go-fine-add" type="button" ${state.fineMember ? "" : "disabled"}>
+            ${icon("attention", { size: 18, color: "#fff" })}
+            Далее
+        </button>`;
+
+    document.getElementById("back-to-settings").addEventListener("click", () => {
+        state.screen = "settings";
+        render();
+    });
+
+    document.getElementById("member-search").addEventListener("input", event => {
+        state.memberSearch = event.target.value;
+        renderFineUsers();
+    });
+
+    content.querySelectorAll("[data-member-id]").forEach(button => {
+        button.addEventListener("click", () => {
+            const memberId = Number(button.dataset.memberId);
+            state.fineMember = (bank.members || []).find(item => item.telegramUserId === memberId) || null;
+            renderFineUsers();
+        });
+    });
+
+    document.getElementById("go-fine-add").addEventListener("click", () => {
+        if (!state.fineMember) {
+            return;
+        }
+
+        state.screen = "fine-add";
+        render();
+    });
+}
+
+function renderFineAdd() {
+    const bank = state.bank;
+    const member = state.fineMember;
+
+    if (!bank?.canManage || !member) {
+        state.screen = "fine-users";
+        render();
+        return;
+    }
+
+    content.innerHTML = `
+        <button class="back-link" id="back-to-fine-users" type="button">← Участники</button>
+        <h2 class="section-title">Выписка штрафа</h2>
+
+        <div class="panel highlight-card">
+            <div>
+                <strong>${escapeHtml(member.displayName)}</strong>
+                <div class="hint">id: ${member.telegramUserId}</div>
+                <div class="member-card__balances">${renderMemberBalances(bank, member.balances)}</div>
+            </div>
+        </div>
+
+        <form class="form-card panel" id="fine-form">
+            <label class="form-label" for="fine-currency">Валюта</label>
+            ${renderCurrencySelect(bank, { id: "fine-currency-select" })}
+
+            <label class="form-label" for="fine-amount">Сумма</label>
+            <input id="fine-amount" name="amount" type="number" min="0.01" step="0.01" placeholder="Сколько списать" required>
+
+            <label class="form-label" for="fine-reason">Причина</label>
+            <textarea id="fine-reason" name="reason" placeholder="За что штраф" maxlength="256" rows="3" required></textarea>
+
+            <button class="submit-button submit-button--danger" type="submit">
+                ${icon("attention", { size: 18, color: "#fff" })}
+                Выписать штраф
+            </button>
+        </form>`;
+
+    bindCurrencySelects(content);
+
+    document.getElementById("back-to-fine-users").addEventListener("click", () => {
+        state.screen = "fine-users";
+        render();
+    });
+
+    document.getElementById("fine-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        const data = new FormData(event.target);
+        const amount = Number(data.get("amount"));
+        const reason = data.get("reason")?.toString().trim();
+
+        if (!Number.isFinite(amount) || amount <= 0) {
+            showError(new Error("Укажи сумму больше нуля."));
+            return;
+        }
+
+        if (!reason) {
+            showError(new Error("Укажи причину штрафа."));
+            return;
+        }
+
+        try {
+            await apiPost(`/api/banks/${bank.id}/fine`, {
+                targetTelegramUserId: member.telegramUserId,
+                currencyCode: data.get("currencyCode"),
+                amount,
+                reason
+            });
+            await refreshBank();
+            state.fineMember = (state.bank.members || []).find(item => item.telegramUserId === member.telegramUserId) || null;
+            state.screen = "fine-users";
             render();
         } catch (error) {
             showError(error);

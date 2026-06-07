@@ -62,6 +62,23 @@ public sealed class BankTransaction
     public static BankTransaction Purchase(Guid bankId, Guid cardId, Money money, string productName, DateTimeOffset now) =>
         new(Guid.NewGuid(), bankId, cardId, "purchase", money.CurrencyCode, -money.Amount, $"Purchased: {productName}", now);
 
+    public static BankTransaction Fine(
+        Guid bankId,
+        Guid cardId,
+        Money money,
+        string targetDisplayName,
+        string reason,
+        DateTimeOffset now) =>
+        new(
+            Guid.NewGuid(),
+            bankId,
+            cardId,
+            "fine",
+            money.CurrencyCode,
+            -money.Amount,
+            $"Штраф {targetDisplayName}: {reason}",
+            now);
+
     public static BankTransaction Rehydrate(
         Guid id,
         Guid bankId,

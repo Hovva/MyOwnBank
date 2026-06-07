@@ -51,6 +51,17 @@ public sealed record CardCreditedNotification(
 
 public sealed record CreditResult(BankSummary Bank, CardCreditedNotification? Notification);
 
+public sealed record CardFinedNotification(
+    long RecipientTelegramUserId,
+    string IssuerDisplayName,
+    string CurrencyCode,
+    string CurrencyName,
+    decimal Amount,
+    string Reason,
+    IReadOnlyDictionary<string, decimal> NewBalances);
+
+public sealed record FineResult(BankSummary Bank, CardFinedNotification? Notification);
+
 public sealed record PurchasedItemSummary(
     string ProductName,
     string CurrencyCode,

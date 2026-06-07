@@ -965,27 +965,11 @@ body {
 
 .currency-add-form {
     display: grid;
-    grid-template-columns: 1fr 1fr 44px auto;
+    grid-template-columns: 52px 1fr auto;
     gap: 6px;
     align-items: center;
     padding-top: 10px;
     border-top: 1px solid #edf1f4;
-}
-
-.currency-add-form input {
-    border: 1px solid #dfe6ec;
-    border-radius: 10px;
-    padding: 7px 8px;
-    font: inherit;
-    font-size: 0.88rem;
-    background: #fff;
-    min-width: 0;
-}
-
-.currency-add-form input[name="icon"] {
-    text-align: center;
-    font-size: 1rem;
-    padding: 7px 4px;
 }
 
 .back-link {
@@ -1034,13 +1018,52 @@ body {
     color: var(--muted);
 }
 
-.credit-next-btn {
+.balance-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    align-items: center;
+}
+
+.balance-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.balance-chip__icon.currency-icon-image {
+    width: 18px;
+    height: 18px;
+}
+
+.balance-chip__icon.currency-icon-emoji {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.balance-chip__amount {
+    font-variant-numeric: tabular-nums;
+    color: var(--text, #1f2a33);
+    font-weight: 600;
+}
+
+.credit-next-btn,
+.fine-next-btn {
     width: 100%;
 }
 
-.credit-next-btn:disabled {
+.credit-next-btn:disabled,
+.fine-next-btn:disabled {
     opacity: 0.45;
     cursor: default;
+}
+
+.submit-button--danger {
+    background: var(--danger);
+}
+
+.submit-button--danger:hover:not(:disabled) {
+    background: var(--danger-dark);
 }
 
 .form-label {
@@ -1591,6 +1614,57 @@ body {
     width: auto;
     padding: 8px 12px;
     font-size: 0.84rem;
+}
+
+.invite-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 10px 12px;
+}
+
+.invite-panel__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.invite-result {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.invite-code {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px dashed #c8d2da;
+    border-radius: 10px;
+    background: var(--surface-soft, #f5f7f9);
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.invite-code:hover {
+    border-color: var(--accent, #4f8cff);
+}
+
+.invite-code--copied {
+    border-color: #46c08a;
+    background: rgba(70, 192, 138, 0.12);
+}
+
+.invite-code__value {
+    font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--text, #1f2a33);
+    word-break: break-all;
 }
 
 .panel--stack {

@@ -26,6 +26,8 @@ internal static class MiniAppApi
         app.MapPost("/api/banks/{bankId:guid}/currencies/{currencyCode}/icon", UploadCurrencyIconAsync);
         app.MapPost("/api/banks/{bankId:guid}/currencies", AddCurrencyAsync);
         app.MapPost("/api/banks/{bankId:guid}/credit", CreditMemberAsync);
+        app.MapPost("/api/banks/{bankId:guid}/fine", FineMemberAsync);
+        app.MapPost("/api/banks/{bankId:guid}/invite", CreateInviteAsync);
         app.MapPost("/api/banks/delete", DeleteMyBankAsync);
         app.MapPost("/api/banks/{bankId:guid}/delete", DeleteBankAsync);
         app.MapGet("/card-images/{bankId}/{*relativePath}", ServeImageAsync);
@@ -655,6 +657,67 @@ internal static class MiniAppApi
         }
     }
 
+    private static async Task<IResult> FineMemberAsync(
+        HttpContext httpContext,
+        Guid bankId,
+        MiniAppFineRequest request,
+        BankService bankService,
+        TelegramNotificationSender notifications,
+        TelegramInitDataValidator validator,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetUser(httpContext, request.InitData, validator, out var userId, out _))
+        {
+            return Results.Unauthorized();
+        }
+
+        var bank = await TryGetMemberBankAsync(bankService, userId, bankId, cancellationToken);
+        if (bank is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (bank.OwnerTelegramUserId != userId)
+        {
+            return Results.Forbid();
+        }
+
+        if (request.TargetTelegramUserId <= 0
+            || request.Amount <= 0
+            || string.IsNullOrWhiteSpace(request.CurrencyCode)
+            || string.IsNullOrWhiteSpace(request.Reason))
+        {
+            return Results.BadRequest(new MiniAppActionResponse("Укажи участника, валюту, сумму и причину штрафа."));
+        }
+
+        try
+        {
+            var result = await bankService.FineMemberCardAsync(
+                new FineMemberCardCommand(
+                    userId,
+                    request.TargetTelegramUserId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    request.CurrencyCode.Trim(),
+                    request.Amount,
+                    request.Reason.Trim()),
+                cancellationToken);
+
+            if (result.Notification is not null)
+            {
+                await notifications.SendFineNotificationAsync(result.Notification, cancellationToken);
+            }
+
+            return Results.Ok(new MiniAppActionResponse("Штраф выписан."));
+        }
+        catch (DomainException ex)
+        {
+            return Results.BadRequest(new MiniAppActionResponse(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new MiniAppActionResponse(ex.Message));
+        }
+    }
+
     private static async Task<IResult> CreditMemberAsync(
         HttpContext httpContext,
         Guid bankId,
@@ -695,6 +758,45 @@ internal static class MiniAppApi
                 cancellationToken);
 
             return Results.Ok(new MiniAppActionResponse("Баланс начислен."));
+        }
+        catch (DomainException ex)
+        {
+            return Results.BadRequest(new MiniAppActionResponse(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new MiniAppActionResponse(ex.Message));
+        }
+    }
+
+    private static async Task<IResult> CreateInviteAsync(
+        HttpContext httpContext,
+        Guid bankId,
+        MiniAppRequest request,
+        BankService bankService,
+        TelegramInitDataValidator validator,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetUser(httpContext, request.InitData, validator, out var userId, out _))
+        {
+            return Results.Unauthorized();
+        }
+
+        var bank = await TryGetMemberBankAsync(bankService, userId, bankId, cancellationToken);
+        if (bank is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (bank.OwnerTelegramUserId != userId)
+        {
+            return Results.Forbid();
+        }
+
+        try
+        {
+            var invite = await bankService.CreateInviteCodeAsync(new CreateInviteCodeCommand(userId), cancellationToken);
+            return Results.Ok(new MiniAppInviteResponse(invite.Code, invite.ExpiresAt));
         }
         catch (DomainException ex)
         {
@@ -830,6 +932,8 @@ internal static class MiniAppApi
 
 internal sealed record MiniAppRequest(string InitData);
 
+internal sealed record MiniAppInviteResponse(string Code, DateTimeOffset ExpiresAt);
+
 internal sealed record MiniAppMenuResponse(
     long UserId,
     string DisplayName,
@@ -875,6 +979,13 @@ internal sealed record MiniAppCreditRequest(
     long TargetTelegramUserId,
     string CurrencyCode,
     decimal Amount);
+
+internal sealed record MiniAppFineRequest(
+    string InitData,
+    long TargetTelegramUserId,
+    string CurrencyCode,
+    decimal Amount,
+    string Reason);
 
 internal sealed record MiniAppAddProductRequest(string InitData, string Name, string CurrencyCode, decimal Price, string? Description = null);
 

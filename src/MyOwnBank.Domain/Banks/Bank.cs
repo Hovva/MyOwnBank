@@ -155,6 +155,28 @@ public sealed class Bank
         return transaction;
     }
 
+    public BankTransaction FineCard(Guid cardId, Money money, DateTimeOffset now, string targetDisplayName, string reason)
+    {
+        EnsureCurrencyExists(money.CurrencyCode);
+
+        var trimmedReason = reason.Trim();
+        if (trimmedReason.Length == 0)
+        {
+            throw new DomainException("Укажи причину штрафа.");
+        }
+
+        if (trimmedReason.Length > 256)
+        {
+            throw new DomainException("Причина штрафа не длиннее 256 символов.");
+        }
+
+        GetCard(cardId).Debit(money);
+        var transaction = BankTransaction.Fine(Id, cardId, money, targetDisplayName, trimmedReason, now);
+        _transactions.Add(transaction);
+
+        return transaction;
+    }
+
     public BankTransaction BuyProduct(Guid buyerCardId, Guid productId, DateTimeOffset now)
     {
         var shop = Shop ?? throw new DomainException("Shop is not opened yet.");
