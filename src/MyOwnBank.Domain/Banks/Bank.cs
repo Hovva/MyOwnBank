@@ -7,6 +7,8 @@ namespace MyOwnBank.Domain.Banks;
 
 public sealed class Bank
 {
+    public const int MaxCurrencies = 4;
+
     private readonly List<BankMember> _members = [];
     private readonly List<BankCard> _cards = [];
     private readonly List<Currency> _currencies = [];
@@ -38,15 +40,36 @@ public sealed class Bank
 
     public IReadOnlyCollection<BankTransaction> Transactions => _transactions.AsReadOnly();
 
-    public static Bank Create(string name, long ownerTelegramUserId, string ownerDisplayName, DateTimeOffset now)
+    public static Bank Create(
+        string name,
+        long ownerTelegramUserId,
+        string ownerDisplayName,
+        IEnumerable<Currency> currencies,
+        DateTimeOffset now)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
             throw new DomainException("Bank name is required.");
         }
 
+        var initialCurrencies = currencies.ToArray();
+        if (initialCurrencies.Length == 0)
+        {
+            throw new DomainException("Добавь хотя бы одну валюту.");
+        }
+
+        if (initialCurrencies.Length > MaxCurrencies)
+        {
+            throw new DomainException($"В банке не больше {MaxCurrencies} валют.");
+        }
+
         var bank = new Bank(Guid.NewGuid(), name.Trim(), ownerTelegramUserId, now);
-        bank._currencies.AddRange(Currency.DefaultCurrencies);
+
+        foreach (var currency in initialCurrencies)
+        {
+            bank.AddCurrency(currency);
+        }
+
         var owner = bank.AddMember(ownerTelegramUserId, ownerDisplayName, now);
         bank.IssueCard(owner.Id, now);
 
@@ -171,6 +194,57 @@ public sealed class Bank
         {
             throw new DomainException("Bank member was not found.");
         }
+    }
+
+    public void AddCurrency(Currency currency)
+    {
+        if (_currencies.Any(item => string.Equals(item.Code, currency.Code, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new DomainException("Такая валюта уже есть в банке.");
+        }
+
+        if (_currencies.Count >= MaxCurrencies)
+        {
+            throw new DomainException($"В банке не больше {MaxCurrencies} валют.");
+        }
+
+        _currencies.Add(currency with { Icon = currency.ResolveIcon() });
+
+        foreach (var card in _cards)
+        {
+            card.EnsureBalanceSlot(currency.Code);
+        }
+    }
+
+    public void UpdateCurrency(string currencyCode, string name, string icon)
+    {
+        var normalizedName = name.Trim();
+        if (normalizedName.Length == 0)
+        {
+            throw new DomainException("Название валюты не может быть пустым.");
+        }
+
+        if (normalizedName.Length > 64)
+        {
+            throw new DomainException("Название валюты не длиннее 64 символов.");
+        }
+
+        if (normalizedName.Contains('\n') || normalizedName.Contains('\r'))
+        {
+            throw new DomainException("Название должно быть одной строкой.");
+        }
+
+        var normalizedIcon = CurrencyIcon.Normalize(icon);
+
+        var index = _currencies.FindIndex(item =>
+            string.Equals(item.Code, currencyCode, StringComparison.OrdinalIgnoreCase));
+        if (index < 0)
+        {
+            throw new DomainException("Валюта не найдена в этом банке.");
+        }
+
+        var current = _currencies[index];
+        _currencies[index] = current with { Name = normalizedName, Icon = normalizedIcon };
     }
 
     private void EnsureCurrencyExists(string currencyCode)

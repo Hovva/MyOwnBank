@@ -84,17 +84,11 @@ public sealed class TelegramCommandRouter(BankService bankService)
 
         if (commandName is "/create" or "/newbank")
         {
-            var commandPrefix = commandName == "/create" ? "/create" : "/newbank";
-            var bankName = command[commandPrefix.Length..].Trim();
-            if (string.IsNullOrWhiteSpace(bankName))
-            {
-                bankName = $"{displayName}'s bank";
-            }
-
-            var bank = await bankService.CreateBankAsync(new CreateBankCommand(bankName, userId, displayName), cancellationToken);
-            var card = bank.Cards.First();
-
-            return new CommandResponse($"Банк '{bank.Name}' готов.\nТвоя карта: {card.Id}\nВалюты: hug, kiss, spank\n\n{FormatBankStats(bank, userId)}");
+            return new CommandResponse(
+                """
+                Создай банк через Mini App: укажи название и хотя бы одну валюту.
+                Вступить по приглашению: /join <код>
+                """);
         }
 
         if (commandName == "/invite")

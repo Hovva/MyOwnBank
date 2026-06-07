@@ -8,6 +8,10 @@ public sealed class BankCardEntity
 
     public Guid OwnerMemberId { get; set; }
 
+    public string CardNumber { get; set; } = string.Empty;
+
+    public string? HolderName { get; set; }
+
     public DateTimeOffset IssuedAt { get; set; }
 
     public ICollection<CardBalanceEntity> Balances { get; set; } = [];

@@ -10,13 +10,16 @@ internal static class BankMapper
 {
     public static Bank ToDomain(BankEntity entity)
     {
-        var currencies = entity.Currencies.Select(item => new Currency(item.Code, item.Name));
+        var currencies = entity.Currencies.Select(item =>
+            new Currency(item.Code, item.Name, item.Icon));
         var members = entity.Members.Select(item =>
             BankMember.Rehydrate(item.Id, item.TelegramUserId, item.DisplayName, item.JoinedAt));
         var cards = entity.Cards.Select(item =>
             BankCard.Rehydrate(
                 item.Id,
                 item.OwnerMemberId,
+                item.CardNumber,
+                item.HolderName,
                 item.Balances.ToDictionary(balance => balance.CurrencyCode, balance => balance.Amount),
                 item.IssuedAt));
         var shop = entity.Shop is null
@@ -27,6 +30,7 @@ internal static class BankMapper
                 entity.Shop.Products.Select(product => ShopProduct.Rehydrate(
                     product.Id,
                     product.Name,
+                    product.Description,
                     new Money(product.CurrencyCode, product.Price),
                     product.IsActive,
                     product.CreatedAt)));
@@ -64,7 +68,8 @@ internal static class BankMapper
             {
                 BankId = bank.Id,
                 Code = currency.Code,
-                Name = currency.Name
+                Name = currency.Name,
+                Icon = currency.ResolveIcon()
             }).ToArray(),
             Members = bank.Members.Select(member => new BankMemberEntity
             {
@@ -79,6 +84,8 @@ internal static class BankMapper
                 Id = card.Id,
                 BankId = bank.Id,
                 OwnerMemberId = card.OwnerMemberId,
+                CardNumber = card.CardNumber,
+                HolderName = card.HolderName,
                 IssuedAt = card.IssuedAt,
                 Balances = card.Balances.Select(balance => new CardBalanceEntity
                 {
@@ -96,6 +103,7 @@ internal static class BankMapper
                     Id = product.Id,
                     BankId = bank.Id,
                     Name = product.Name,
+                    Description = product.Description,
                     CurrencyCode = product.Price.CurrencyCode,
                     Price = product.Price.Amount,
                     IsActive = product.IsActive,

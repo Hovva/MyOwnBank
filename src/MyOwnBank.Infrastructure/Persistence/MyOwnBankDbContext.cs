@@ -29,6 +29,7 @@ public sealed class MyOwnBankDbContext(DbContextOptions<MyOwnBankDbContext> opti
             entity.HasKey(item => new { item.BankId, item.Code });
             entity.Property(item => item.Code).HasMaxLength(32);
             entity.Property(item => item.Name).HasMaxLength(64);
+            entity.Property(item => item.Icon).HasMaxLength(128);
         });
 
         modelBuilder.Entity<BankMemberEntity>(entity =>
@@ -43,6 +44,8 @@ public sealed class MyOwnBankDbContext(DbContextOptions<MyOwnBankDbContext> opti
         {
             entity.ToTable("bank_cards");
             entity.HasKey(item => item.Id);
+            entity.Property(item => item.CardNumber).HasMaxLength(32);
+            entity.Property(item => item.HolderName).HasMaxLength(64);
             entity.HasMany(item => item.Balances).WithOne().HasForeignKey(item => item.CardId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -66,6 +69,7 @@ public sealed class MyOwnBankDbContext(DbContextOptions<MyOwnBankDbContext> opti
             entity.ToTable("shop_products");
             entity.HasKey(item => item.Id);
             entity.Property(item => item.Name).HasMaxLength(160);
+            entity.Property(item => item.Description).HasMaxLength(512);
             entity.Property(item => item.CurrencyCode).HasMaxLength(32);
             entity.Property(item => item.Price).HasPrecision(18, 2);
         });

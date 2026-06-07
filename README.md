@@ -4,17 +4,18 @@ Telegram bot for private playful banks between couples.
 
 ## Architecture
 
-- `MyOwnBank.Domain` - business model and rules: banks, members, cards, currencies, shops, products.
-- `MyOwnBank.Application` - use cases and repository contracts.
-- `MyOwnBank.Infrastructure` - technical implementations. It currently uses in-memory storage.
-- `MyOwnBank.Bot` - Telegram entry point and command routing.
-- `MyOwnBank.Tests` - domain and application tests.
+Подробная схема (слои, домен, Mini App, API, магазин/корзина): **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
-Dependencies point inward:
+Кратко:
 
-`Bot -> Infrastructure -> Application -> Domain`
+- `MyOwnBank.Domain` — бизнес-модель: банки, карты, валюты, магазин, товары.
+- `MyOwnBank.Application` — сценарии (`BankService`), контракты репозиториев.
+- `MyOwnBank.Infrastructure` — SQLite, EF Core, маппинг.
+- `MyOwnBank.Bot` — Telegram-бот и команды.
+- `MyOwnBank.MiniApp` — Mini App (SPA + REST API).
+- `MyOwnBank.Tests` — тесты домена.
 
-`Application -> Domain`
+Зависимости: `Bot / MiniApp → Infrastructure → Application → Domain`.
 
 ## Current commands
 

@@ -19,9 +19,9 @@ public sealed class Shop
 
     public IReadOnlyCollection<ShopProduct> Products => _products.AsReadOnly();
 
-    public ShopProduct AddProduct(string name, Money price, DateTimeOffset now)
+    public ShopProduct AddProduct(string name, Money price, DateTimeOffset now, string? description = null)
     {
-        var product = ShopProduct.Create(name, price, now);
+        var product = ShopProduct.Create(name, price, now, description);
         _products.Add(product);
         return product;
     }
@@ -40,4 +40,6 @@ public sealed class Shop
 
         return product ?? throw new DomainException("Product was not found or is inactive.");
     }
+
+    public void ArchiveProduct(Guid productId) => GetActiveProduct(productId).Archive();
 }

@@ -6,8 +6,7 @@
       "launchBrowser": true,
       "applicationUrl": "http://localhost:5218",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "ConnectionStrings__MyOwnBank": "Data Source=my-own-bank.db"
+        "ASPNETCORE_ENVIRONMENT": "Development"
       }
     }
   }

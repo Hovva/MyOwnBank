@@ -6,10 +6,17 @@ namespace MyOwnBank.Tests.Domain;
 
 public sealed class BankTests
 {
+    private static readonly Currency[] SampleCurrencies =
+    [
+        Currency.Hug,
+        Currency.Kiss,
+        Currency.Spank
+    ];
+
     [Fact]
-    public void Create_IssuesOwnerCardWithDefaultCurrencies()
+    public void Create_IssuesOwnerCardWithProvidedCurrencies()
     {
-        var bank = Bank.Create("My own bank", 123, "Owner", DateTimeOffset.UtcNow);
+        var bank = Bank.Create("My own bank", 123, "Owner", SampleCurrencies, DateTimeOffset.UtcNow);
 
         var card = Assert.Single(bank.Cards);
 
@@ -20,9 +27,16 @@ public sealed class BankTests
     }
 
     [Fact]
+    public void Create_RequiresAtLeastOneCurrency()
+    {
+        Assert.Throws<DomainException>(() =>
+            Bank.Create("My own bank", 123, "Owner", Array.Empty<Currency>(), DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
     public void BuyProduct_DebitsBuyerCard()
     {
-        var bank = Bank.Create("My own bank", 123, "Owner", DateTimeOffset.UtcNow);
+        var bank = Bank.Create("My own bank", 123, "Owner", SampleCurrencies, DateTimeOffset.UtcNow);
         var card = bank.Cards.Single();
         var shop = bank.OpenShop(DateTimeOffset.UtcNow);
         var product = shop.AddProduct("Real reward", new("kiss", 3), DateTimeOffset.UtcNow);
@@ -37,7 +51,7 @@ public sealed class BankTests
     public void CreditCard_RecordsCurrencyIssuedTransaction()
     {
         var now = DateTimeOffset.UtcNow;
-        var bank = Bank.Create("My own bank", 123, "Owner", now);
+        var bank = Bank.Create("My own bank", 123, "Owner", SampleCurrencies, now);
         var card = bank.Cards.Single();
 
         bank.CreditCard(card.Id, new("hug", 5), now);
@@ -53,7 +67,7 @@ public sealed class BankTests
     public void BuyProduct_RecordsPurchaseTransaction()
     {
         var now = DateTimeOffset.UtcNow;
-        var bank = Bank.Create("My own bank", 123, "Owner", now);
+        var bank = Bank.Create("My own bank", 123, "Owner", SampleCurrencies, now);
         var card = bank.Cards.Single();
         var shop = bank.OpenShop(now);
         var product = shop.AddProduct("Real kiss", new("kiss", 3), now);
@@ -73,7 +87,7 @@ public sealed class BankTests
     public void CreditCard_OnlyOwnerCanIssueCurrency()
     {
         var now = DateTimeOffset.UtcNow;
-        var bank = Bank.Create("My own bank", 123, "Owner", now);
+        var bank = Bank.Create("My own bank", 123, "Owner", SampleCurrencies, now);
         bank.AddMember(456, "Partner", now);
 
         bank.EnsureOwner(123);
@@ -96,7 +110,7 @@ public sealed class BankTests
     [Fact]
     public void BuyProduct_FailsWhenBalanceIsNotEnough()
     {
-        var bank = Bank.Create("My own bank", 123, "Owner", DateTimeOffset.UtcNow);
+        var bank = Bank.Create("My own bank", 123, "Owner", SampleCurrencies, DateTimeOffset.UtcNow);
         var card = bank.Cards.Single();
         var shop = bank.OpenShop(DateTimeOffset.UtcNow);
         var product = shop.AddProduct("Real reward", new("kiss", 3), DateTimeOffset.UtcNow);

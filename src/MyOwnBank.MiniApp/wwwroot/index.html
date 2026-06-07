@@ -14,14 +14,26 @@
         </main>
 
         <nav class="bottom-nav" aria-label="Навигация">
-            <button id="nav-banks" class="nav-side" type="button" aria-label="Банки">
-                <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"/></svg>
+            <button id="nav-banks" class="nav-side" type="button" aria-label="Профиль">
+                <span id="nav-banks-icon"></span>
             </button>
-            <button id="nav-home" class="nav-home" type="button" aria-label="Домой">
-                <svg viewBox="0 0 24 24"><path d="M12 21s-7-4.35-9.5-8.5C1.2 9.2 3.4 5 7.5 5c2.1 0 3.4 1.2 4.5 2.7C13.1 6.2 14.4 5 16.5 5 20.6 5 22.8 9.2 21.5 12.5 19 16.65 12 21 12 21z"/></svg>
+            <div class="nav-separator" id="nav-separator-1" aria-hidden="true"></div>
+            <button id="nav-home" class="nav-home" type="button" aria-label="Банк">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="currentColor" d="M12 3.6 4.2 12v9h5.1v-5.8h5.4V21H19.8v-9L12 3.6Z"/>
+                    <path fill="currentColor" d="M16.1 10.1h2.4v4.1h-2.4V10.1Z"/>
+                    <rect class="house-cutout" x="10.2" y="12.1" width="3.6" height="3.6" rx=".35"/>
+                    <rect class="house-cutout" x="11.1" y="16.8" width="1.8" height="4.2" rx=".25"/>
+                </svg>
             </button>
-            <button id="nav-action" class="nav-side" type="button" aria-label="Магазин">
-                <svg viewBox="0 0 24 24"><path d="M7 4h10l1 3h3v2h-1l-2 11H6L4 9H3V7h3l1-3zm3 3h4l-.5-1.5h-3L10 7zm-1.2 4 1 6h2.4l1-6H8.8zm4.9 0-1 6h2.4l1-6h-2.4z"/></svg>
+            <div class="nav-separator" id="nav-separator-2" aria-hidden="true"></div>
+            <button id="nav-shop" class="nav-side" type="button" aria-label="Магазин">
+                <span id="nav-shop-icon"></span>
+            </button>
+            <div class="nav-separator" id="nav-separator-3" aria-hidden="true"></div>
+            <button id="nav-cart" class="nav-side nav-cart" type="button" aria-label="Корзина">
+                <span id="nav-cart-icon"></span>
+                <span class="nav-cart__badge hidden" id="nav-cart-badge">0</span>
             </button>
         </nav>
     </div>
@@ -29,6 +41,7 @@
     <input id="file-my-card" class="hidden-input" type="file" accept="image/png,image/jpeg,image/webp">
     <input id="file-template" class="hidden-input" type="file" accept="image/png,image/jpeg,image/webp">
 
+    <script src="assets/icons/icons.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

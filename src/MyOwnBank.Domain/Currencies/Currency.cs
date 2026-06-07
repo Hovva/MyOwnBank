@@ -1,10 +1,10 @@
 namespace MyOwnBank.Domain.Currencies;
 
-public sealed record Currency(string Code, string Name)
+public sealed record Currency(string Code, string Name, string Icon)
 {
-    public static Currency Hug { get; } = new("hug", "обнимашки");
-    public static Currency Kiss { get; } = new("kiss", "поцелуйчики");
-    public static Currency Spank { get; } = new("spank", "порка");
+    public static Currency Hug { get; } = new("hug", "обнимашки", "🤗");
+    public static Currency Kiss { get; } = new("kiss", "поцелуйчики", "💋");
+    public static Currency Spank { get; } = new("spank", "порка", "🖐️");
 
     public static IReadOnlyCollection<Currency> DefaultCurrencies { get; } =
     [
@@ -12,6 +12,18 @@ public sealed record Currency(string Code, string Name)
         Kiss,
         Spank
     ];
+
+    public static string ResolveDefaultIcon(string code) =>
+        code.ToLowerInvariant() switch
+        {
+            "hug" => "🤗",
+            "kiss" => "💋",
+            "spank" => "🖐️",
+            _ => "💰"
+        };
+
+    public string ResolveIcon() =>
+        string.IsNullOrWhiteSpace(Icon) ? ResolveDefaultIcon(Code) : Icon.Trim();
 
     public static bool TryResolveCode(string input, out string code)
     {

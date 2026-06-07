@@ -1,6 +1,7 @@
 using MyOwnBank.Application.Abstractions;
 using MyOwnBank.Application.Common;
 using MyOwnBank.Domain.Banks;
+using MyOwnBank.Domain.Common;
 using MyOwnBank.Domain.Currencies;
 
 namespace MyOwnBank.Application.Banks;
@@ -19,7 +20,13 @@ public sealed class BankService(
             return ToSummary(existing);
         }
 
-        var bank = Bank.Create(command.Name, command.OwnerTelegramUserId, command.OwnerDisplayName, clock.UtcNow);
+        var currencies = BuildInitialCurrencies(command.Currencies);
+        var bank = Bank.Create(
+            command.Name,
+            command.OwnerTelegramUserId,
+            command.OwnerDisplayName,
+            currencies,
+            clock.UtcNow);
         await repository.AddAsync(bank, cancellationToken);
 
         return ToSummary(bank);
@@ -132,7 +139,11 @@ public sealed class BankService(
     {
         var bank = await GetUserBank(command.TelegramUserId, cancellationToken);
         var shop = bank.OpenShop(clock.UtcNow);
-        var product = shop.AddProduct(command.Name, new Money(command.CurrencyCode, command.Price), clock.UtcNow);
+        var product = shop.AddProduct(
+            command.Name,
+            new Money(command.CurrencyCode, command.Price),
+            clock.UtcNow,
+            command.Description);
 
         await repository.SaveAsync(bank, cancellationToken);
         return product.Id;
@@ -140,17 +151,142 @@ public sealed class BankService(
 
     public async Task BuyProductAsync(BuyProductCommand command, CancellationToken cancellationToken)
     {
+        await BuyProductsAsync(new BuyProductsCommand(command.TelegramUserId, [command.ProductId]), cancellationToken);
+    }
+
+    public async Task<BuyProductsResult> BuyProductsAsync(BuyProductsCommand command, CancellationToken cancellationToken)
+    {
+        if (command.ProductIds is null || command.ProductIds.Count == 0)
+        {
+            throw new DomainException("Корзина пуста.");
+        }
+
         var bank = await GetUserBank(command.TelegramUserId, cancellationToken);
+        var shop = bank.Shop ?? throw new DomainException("Магазин ещё не открыт.");
         var card = bank.GetCardForMember(command.TelegramUserId);
-        bank.BuyProduct(card.Id, command.ProductId, clock.UtcNow);
+        var buyer = bank.GetMember(command.TelegramUserId);
+        var now = clock.UtcNow;
+
+        var required = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var snapshots = new List<(Guid Id, string Name, Money Price)>();
+
+        foreach (var productId in command.ProductIds)
+        {
+            var product = shop.GetActiveProduct(productId);
+            snapshots.Add((product.Id, product.Name, product.Price));
+            required[product.Price.CurrencyCode] = required.GetValueOrDefault(product.Price.CurrencyCode) + product.Price.Amount;
+        }
+
+        foreach (var (currencyCode, amount) in required)
+        {
+            if (card.Balances.GetValueOrDefault(currencyCode) < amount)
+            {
+                var currencyName = ResolveCurrencyName(bank, currencyCode);
+                throw new DomainException($"Недостаточно {currencyName}.");
+            }
+        }
+
+        foreach (var snapshot in snapshots)
+        {
+            bank.BuyProduct(card.Id, snapshot.Id, now);
+        }
 
         await repository.SaveAsync(bank, cancellationToken);
+
+        var groupedItems = snapshots
+            .GroupBy(item => (item.Name, item.Price.CurrencyCode, item.Price.Amount))
+            .Select(group => new PurchasedItemSummary(
+                group.Key.Name,
+                group.Key.CurrencyCode,
+                ResolveCurrencyName(bank, group.Key.CurrencyCode),
+                group.Key.Amount,
+                group.Count()))
+            .ToArray();
+
+        ProductPurchasedNotification? notification = buyer.TelegramUserId == bank.OwnerTelegramUserId
+            ? null
+            : new ProductPurchasedNotification(
+                bank.OwnerTelegramUserId,
+                buyer.DisplayName,
+                groupedItems,
+                card.Balances);
+
+        return new BuyProductsResult(ToSummary(bank), notification);
     }
 
     public async Task<IReadOnlyCollection<ProductSummary>> GetShopAsync(long telegramUserId, CancellationToken cancellationToken)
     {
         var bank = await GetUserBank(telegramUserId, cancellationToken);
         return ToSummary(bank).Products;
+    }
+
+    public async Task RemoveProductAsync(RemoveProductCommand command, CancellationToken cancellationToken)
+    {
+        var bank = await GetUserBank(command.TelegramUserId, cancellationToken);
+        bank.EnsureOwner(command.TelegramUserId);
+        var shop = bank.Shop ?? throw new DomainException("Магазин ещё не открыт.");
+        shop.ArchiveProduct(command.ProductId);
+
+        await repository.SaveAsync(bank, cancellationToken);
+    }
+
+    public async Task<BankSummary> AddCurrencyAsync(AddCurrencyCommand command, CancellationToken cancellationToken)
+    {
+        var bank = await GetUserBank(command.TelegramUserId, cancellationToken);
+        bank.EnsureOwner(command.TelegramUserId);
+
+        var code = NormalizeCurrencyCode(command.Code);
+        var name = command.Name.Trim();
+        var icon = command.Icon.Trim();
+
+        if (name.Length == 0)
+        {
+            throw new DomainException("Укажи название валюты.");
+        }
+
+        if (icon.Length == 0)
+        {
+            throw new DomainException("Укажи иконку валюты.");
+        }
+
+        bank.AddCurrency(new Currency(code, name, CurrencyIcon.Normalize(icon)));
+
+        await repository.SaveAsync(bank, cancellationToken);
+        return ToSummary(bank);
+    }
+
+    public async Task<BankSummary> UpdateCurrencyAsync(UpdateCurrencyCommand command, CancellationToken cancellationToken)
+    {
+        var bank = await GetUserBank(command.TelegramUserId, cancellationToken);
+        bank.EnsureOwner(command.TelegramUserId);
+        bank.UpdateCurrency(command.CurrencyCode, command.Name, command.Icon);
+
+        await repository.SaveAsync(bank, cancellationToken);
+        return ToSummary(bank);
+    }
+
+    public async Task<BankSummary> UpdateCardHolderNameAsync(UpdateCardHolderNameCommand command, CancellationToken cancellationToken)
+    {
+        var bank = await GetUserBank(command.TelegramUserId, cancellationToken);
+        var card = bank.GetCardForMember(command.TelegramUserId);
+        card.UpdateHolderName(command.HolderName);
+
+        await repository.SaveAsync(bank, cancellationToken);
+        return ToSummary(bank);
+    }
+
+    public async Task<Guid> DeleteBankAsync(DeleteBankCommand command, CancellationToken cancellationToken)
+    {
+        var bank = await GetUserBank(command.TelegramUserId, cancellationToken);
+        bank.EnsureOwner(command.TelegramUserId);
+
+        if (command.BankId is Guid bankId && bank.Id != bankId)
+        {
+            throw new DomainException("Банк не найден.");
+        }
+
+        await repository.DeleteAsync(bank.Id, cancellationToken);
+        return bank.Id;
     }
 
     public async Task<IReadOnlyCollection<TransactionSummary>> GetHistoryAsync(long telegramUserId, CancellationToken cancellationToken)
@@ -188,7 +324,62 @@ public sealed class BankService(
     }
 
     private static string GetCurrencyName(string currencyCode) =>
-        Currency.DefaultCurrencies.Single(currency => currency.Code == currencyCode).Name;
+        Currency.DefaultCurrencies.SingleOrDefault(currency => currency.Code == currencyCode)?.Name
+        ?? currencyCode;
+
+    private static string ResolveCurrencyName(Bank bank, string currencyCode) =>
+        bank.Currencies.SingleOrDefault(currency => currency.Code.Equals(currencyCode, StringComparison.OrdinalIgnoreCase))?.Name
+        ?? currencyCode;
+
+    private static IReadOnlyList<Currency> BuildInitialCurrencies(IReadOnlyList<CreateBankCurrencyInput> currencies)
+    {
+        if (currencies is null || currencies.Count == 0)
+        {
+            throw new DomainException("Добавь хотя бы одну валюту.");
+        }
+
+        if (currencies.Count > Bank.MaxCurrencies)
+        {
+            throw new DomainException($"В банке не больше {Bank.MaxCurrencies} валют.");
+        }
+
+        return currencies
+            .Select(item =>
+            {
+                var code = NormalizeCurrencyCode(item.Code);
+                var name = item.Name.Trim();
+                var icon = item.Icon.Trim();
+
+                if (name.Length == 0)
+                {
+                    throw new DomainException("Укажи название валюты.");
+                }
+
+                if (icon.Length == 0)
+                {
+                    throw new DomainException("Укажи иконку валюты.");
+                }
+
+                return new Currency(code, name, CurrencyIcon.Normalize(icon));
+            })
+            .ToArray();
+    }
+
+    private static string NormalizeCurrencyCode(string code)
+    {
+        var normalized = code.Trim().ToLowerInvariant();
+        if (normalized.Length is < 2 or > 32)
+        {
+            throw new DomainException("Код валюты: от 2 до 32 латинских символов.");
+        }
+
+        if (!normalized.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_'))
+        {
+            throw new DomainException("Код валюты: только латиница, цифры, - и _.");
+        }
+
+        return normalized;
+    }
 
     private static BankSummary ToSummary(Bank bank) =>
         new(
@@ -198,17 +389,27 @@ public sealed class BankService(
             bank.Members
                 .Select(member => new MemberSummary(member.Id, member.TelegramUserId, member.DisplayName))
                 .ToArray(),
+            bank.Currencies
+                .Select(currency => new CurrencySummary(currency.Code, currency.Name, currency.ResolveIcon()))
+                .ToArray(),
             bank.Cards
-                .Select(card => new CardSummary(
-                    card.Id,
-                    card.OwnerMemberId,
-                    bank.Members.Single(member => member.Id == card.OwnerMemberId).DisplayName,
-                    card.Balances))
+                .Select(card =>
+                {
+                    var owner = bank.Members.Single(member => member.Id == card.OwnerMemberId);
+                    return new CardSummary(
+                        card.Id,
+                        card.OwnerMemberId,
+                        owner.DisplayName,
+                        card.CardNumber,
+                        card.ResolveHolderName(owner.DisplayName),
+                        card.Balances);
+                })
                 .ToArray(),
             bank.Shop?.Products
                 .Select(product => new ProductSummary(
                     product.Id,
                     product.Name,
+                    product.Description,
                     product.Price.CurrencyCode,
                     product.Price.Amount,
                     product.IsActive))

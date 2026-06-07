@@ -42,6 +42,33 @@ public sealed class SqliteBankRepository(IDbContextFactory<MyOwnBankDbContext> d
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task DeleteAsync(Guid bankId, CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = ON;", cancellationToken);
+        await db.Invitations
+            .Where(invitation => invitation.BankId == bankId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        var bank = await db.Banks
+            .Include(item => item.Currencies)
+            .Include(item => item.Members)
+            .Include(item => item.Cards)
+            .ThenInclude(card => card.Balances)
+            .Include(item => item.Shop)
+            .ThenInclude(shop => shop!.Products)
+            .Include(item => item.Transactions)
+            .SingleOrDefaultAsync(item => item.Id == bankId, cancellationToken);
+
+        if (bank is null)
+        {
+            return;
+        }
+
+        db.Banks.Remove(bank);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     private static IQueryable<Entities.BankEntity> Query(MyOwnBankDbContext db) =>
         db.Banks
             .AsNoTracking()

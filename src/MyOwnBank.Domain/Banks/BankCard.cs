@@ -7,10 +7,18 @@ public sealed class BankCard
 {
     private readonly Dictionary<string, decimal> _balances;
 
-    private BankCard(Guid id, Guid ownerMemberId, Dictionary<string, decimal> balances, DateTimeOffset issuedAt)
+    private BankCard(
+        Guid id,
+        Guid ownerMemberId,
+        string cardNumber,
+        string? holderName,
+        Dictionary<string, decimal> balances,
+        DateTimeOffset issuedAt)
     {
         Id = id;
         OwnerMemberId = ownerMemberId;
+        CardNumber = cardNumber;
+        HolderName = holderName;
         IssuedAt = issuedAt;
         _balances = balances;
     }
@@ -18,6 +26,10 @@ public sealed class BankCard
     public Guid Id { get; }
 
     public Guid OwnerMemberId { get; }
+
+    public string CardNumber { get; }
+
+    public string? HolderName { get; private set; }
 
     public DateTimeOffset IssuedAt { get; }
 
@@ -27,15 +39,55 @@ public sealed class BankCard
     {
         var balances = currencies.ToDictionary(currency => currency.Code, _ => 0m, StringComparer.OrdinalIgnoreCase);
 
-        return new BankCard(Guid.NewGuid(), ownerMemberId, balances, now);
+        return new BankCard(Guid.NewGuid(), ownerMemberId, CardNumberGenerator.Generate(), null, balances, now);
     }
 
     public static BankCard Rehydrate(
         Guid id,
         Guid ownerMemberId,
+        string cardNumber,
+        string? holderName,
         IReadOnlyDictionary<string, decimal> balances,
         DateTimeOffset issuedAt) =>
-        new(id, ownerMemberId, new Dictionary<string, decimal>(balances, StringComparer.OrdinalIgnoreCase), issuedAt);
+        new(
+            id,
+            ownerMemberId,
+            string.IsNullOrWhiteSpace(cardNumber) ? CardNumberGenerator.Generate() : cardNumber,
+            holderName,
+            new Dictionary<string, decimal>(balances, StringComparer.OrdinalIgnoreCase),
+            issuedAt);
+
+    public string ResolveHolderName(string fallbackDisplayName) =>
+        string.IsNullOrWhiteSpace(HolderName) ? fallbackDisplayName : HolderName.Trim();
+
+    public void UpdateHolderName(string holderName)
+    {
+        var normalized = holderName.Trim();
+        if (normalized.Length == 0)
+        {
+            throw new DomainException("Имя не может быть пустым.");
+        }
+
+        if (normalized.Length > 64)
+        {
+            throw new DomainException("Имя не длиннее 64 символов.");
+        }
+
+        if (normalized.Contains('\n') || normalized.Contains('\r'))
+        {
+            throw new DomainException("Имя должно быть одной строкой.");
+        }
+
+        HolderName = normalized;
+    }
+
+    internal void EnsureBalanceSlot(string currencyCode)
+    {
+        if (!_balances.ContainsKey(currencyCode))
+        {
+            _balances[currencyCode] = 0m;
+        }
+    }
 
     public void Credit(Money money)
     {

@@ -11,4 +11,6 @@ public interface IBankRepository
     Task<Bank?> GetByTelegramUserIdAsync(long telegramUserId, CancellationToken cancellationToken);
 
     Task SaveAsync(Bank bank, CancellationToken cancellationToken);
+
+    Task DeleteAsync(Guid bankId, CancellationToken cancellationToken);
 }

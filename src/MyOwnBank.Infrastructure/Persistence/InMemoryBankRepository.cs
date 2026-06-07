@@ -33,4 +33,10 @@ public sealed class InMemoryBankRepository : IBankRepository
         _banks[bank.Id] = bank;
         return Task.CompletedTask;
     }
+
+    public Task DeleteAsync(Guid bankId, CancellationToken cancellationToken)
+    {
+        _banks.TryRemove(bankId, out _);
+        return Task.CompletedTask;
+    }
 }

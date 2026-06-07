@@ -16,7 +16,7 @@ using MyOwnBank.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = PersistencePaths.ResolveDatabaseConnectionString(builder.Configuration);
+var connectionString = PersistencePaths.ResolveDatabaseConnectionString(builder.Configuration, builder.Environment.IsDevelopment());
 PersistencePaths.EnsureDatabaseDirectory(connectionString);
 
 builder.Services
@@ -40,6 +40,12 @@ else
     startupLogger.LogInformation("Telegram token is configured. Waiting for BankBotWorker to start polling...");
 }
 
+Console.WriteLine();
+Console.WriteLine();
+Console.WriteLine("connection string for app 1 (Bot)");
+Console.WriteLine(connectionString);
+Console.WriteLine();
+Console.WriteLine();
 startupLogger.LogInformation("SQLite database: {ConnectionString}", connectionString);
 
 await using (var scope = app.Services.CreateAsyncScope())
@@ -47,6 +53,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     var dbContextFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<MyOwnBankDbContext>>();
     await using var db = await dbContextFactory.CreateDbContextAsync();
     await db.Database.EnsureCreatedAsync();
+    await DatabaseSchemaUpdater.ApplyAsync(db);
 }
 
 if (app.Environment.IsDevelopment())
