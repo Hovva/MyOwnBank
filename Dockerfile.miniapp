@@ -1,0 +1,23 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY MyOwnBank.sln ./
+COPY src/MyOwnBank.Domain/MyOwnBank.Domain.csproj src/MyOwnBank.Domain/
+COPY src/MyOwnBank.Application/MyOwnBank.Application.csproj src/MyOwnBank.Application/
+COPY src/MyOwnBank.Infrastructure/MyOwnBank.Infrastructure.csproj src/MyOwnBank.Infrastructure/
+COPY src/MyOwnBank.MiniApp/MyOwnBank.MiniApp.csproj src/MyOwnBank.MiniApp/
+
+RUN dotnet restore src/MyOwnBank.MiniApp/MyOwnBank.MiniApp.csproj
+
+COPY . .
+RUN dotnet publish src/MyOwnBank.MiniApp/MyOwnBank.MiniApp.csproj -c Release -o /app/publish /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+
+COPY --from=build /app/publish .
+
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080
+EXPOSE 8080
+
+ENTRYPOINT ["dotnet", "MyOwnBank.MiniApp.dll"]

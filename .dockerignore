@@ -1,0 +1,11 @@
+**/.git
+**/.idea
+**/bin
+**/obj
+**/artifacts
+**/*.db
+**/*.user
+**/*.suo
+**/appsettings.Development.json
+.env
+.env.*
