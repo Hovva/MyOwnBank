@@ -3,6 +3,7 @@ using MyOwnBank.Application.Banks;
 using MyOwnBank.Domain.Banks;
 using MyOwnBank.Domain.Common;
 using MyOwnBank.Domain.Currencies;
+using MyOwnBank.MiniApp.Security;
 using MyOwnBank.MiniApp.Storage;
 using MyOwnBank.MiniApp.Telegram;
 
@@ -15,10 +16,13 @@ internal static class MiniAppApi
         app.MapPost("/api/menu", GetMenuAsync);
         app.MapPost("/api/notifications", GetNotificationsAsync);
         app.MapPost("/api/notifications/read", MarkNotificationsReadAsync);
+        app.MapPost("/api/notifications/count", GetNotificationsCountAsync);
+        app.MapPost("/api/banks/{bankId:guid}/purchases", GetPurchasesAsync);
         app.MapPost("/api/banks/join", JoinBankAsync);
         app.MapPost("/api/banks/create", CreateBankAsync);
         app.MapPost("/api/banks/{bankId:guid}", GetBankAsync);
         app.MapPost("/api/banks/{bankId:guid}/transactions", GetTransactionsAsync);
+        app.MapPost("/api/banks/{bankId:guid}/members/{memberTelegramUserId:long}/transactions", GetMemberTransactionsAsync);
         app.MapPost("/api/banks/{bankId:guid}/products", AddProductAsync);
         app.MapPost("/api/banks/{bankId:guid}/products/delete", RemoveProductAsync);
         app.MapPost("/api/banks/{bankId:guid}/buy", BuyProductsAsync);
@@ -85,6 +89,74 @@ internal static class MiniAppApi
                 item.CreatedAt,
                 item.IsRead)).ToArray(),
             page.HasMore));
+    }
+
+    private static async Task<IResult> GetNotificationsCountAsync(
+        HttpContext httpContext,
+        MiniAppRequest request,
+        IUserNotificationRepository notifications,
+        TelegramInitDataValidator validator,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetUser(httpContext, request.InitData, validator, out var userId, out _))
+        {
+            return Results.Unauthorized();
+        }
+
+        var unreadCount = await notifications.GetUnreadCountAsync(userId, cancellationToken);
+        return Results.Ok(new MiniAppNotificationsCountResponse(unreadCount));
+    }
+
+    private static async Task<IResult> GetPurchasesAsync(
+        HttpContext httpContext,
+        Guid bankId,
+        MiniAppPurchasesRequest request,
+        BankService bankService,
+        TelegramInitDataValidator validator,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetUser(httpContext, request.InitData, validator, out var userId, out _))
+        {
+            return Results.Unauthorized();
+        }
+
+        var bank = await TryGetMemberBankLiteAsync(bankService, userId, bankId, cancellationToken);
+        if (bank is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (bank.OwnerTelegramUserId != userId)
+        {
+            return Results.Forbid();
+        }
+
+        var skip = Math.Max(0, request.Skip);
+        var limit = request.Limit <= 0 ? 20 : Math.Min(request.Limit, 50);
+
+        try
+        {
+            var page = await bankService.GetBankPurchasesPageAsync(userId, bankId, skip, limit, cancellationToken);
+            return Results.Ok(new MiniAppPurchasesResponse(
+                page.Purchases.Select(item => new MiniAppPurchaseItem(
+                    item.Id,
+                    item.BuyerDisplayName,
+                    item.BuyerTelegramUserId,
+                    item.ProductName,
+                    item.CurrencyCode,
+                    item.CurrencyName,
+                    item.Amount,
+                    item.OccurredAt)).ToArray(),
+                page.HasMore));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new MiniAppActionResponse(ex.Message));
+        }
+        catch (DomainException ex)
+        {
+            return Results.BadRequest(new MiniAppActionResponse(ex.Message));
+        }
     }
 
     private static async Task<IResult> MarkNotificationsReadAsync(
@@ -292,6 +364,56 @@ internal static class MiniAppApi
         }
     }
 
+    private static async Task<IResult> GetMemberTransactionsAsync(
+        HttpContext httpContext,
+        Guid bankId,
+        long memberTelegramUserId,
+        MiniAppTransactionsRequest request,
+        BankService bankService,
+        TelegramInitDataValidator validator,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetUser(httpContext, request.InitData, validator, out var userId, out _))
+        {
+            return Results.Unauthorized();
+        }
+
+        var bank = await TryGetMemberBankLiteAsync(bankService, userId, bankId, cancellationToken);
+        if (bank is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (bank.OwnerTelegramUserId != userId)
+        {
+            return Results.Forbid();
+        }
+
+        var skip = Math.Max(0, request.Skip);
+        var limit = request.Limit <= 0 ? 10 : Math.Min(request.Limit, 50);
+
+        try
+        {
+            var page = await bankService.GetMemberTransactionsPageAsync(
+                userId,
+                bankId,
+                memberTelegramUserId,
+                skip,
+                limit,
+                cancellationToken);
+
+            return Results.Ok(new MiniAppTransactionsResponse(page.Transactions.ToArray(), page.HasMore));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new MiniAppActionResponse(ex.Message));
+        }
+        catch (DomainException ex)
+        {
+            return Results.BadRequest(new MiniAppActionResponse(ex.Message));
+        }
+    }
+
     private static async Task<IResult> BuyProductsAsync(
         HttpContext httpContext,
         Guid bankId,
@@ -323,10 +445,7 @@ internal static class MiniAppApi
                 new BuyProductsCommand(userId, request.ProductIds),
                 cancellationToken);
 
-            if (result.Notification is not null)
-            {
-                await notifications.DeliverPurchaseAsync(bankId, result.Notification, cancellationToken);
-            }
+            await notifications.DeliverPurchaseAsync(bankId, result.Notification!, cancellationToken);
 
             return Results.Ok(new MiniAppActionResponse("Покупка оформлена."));
         }
@@ -838,7 +957,8 @@ internal static class MiniAppApi
                     userId,
                     request.TargetTelegramUserId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     request.CurrencyCode.Trim(),
-                    request.Amount),
+                    request.Amount,
+                    request.Reason?.Trim()),
                 cancellationToken);
 
             if (result.Notification is not null)
@@ -899,7 +1019,7 @@ internal static class MiniAppApi
 
     private static Task<IResult> DeleteMyBankAsync(
         HttpContext httpContext,
-        MiniAppRequest request,
+        MiniAppDeleteBankRequest request,
         BankService bankService,
         CardImageStorage images,
         TelegramInitDataValidator validator,
@@ -909,7 +1029,7 @@ internal static class MiniAppApi
     private static Task<IResult> DeleteBankAsync(
         HttpContext httpContext,
         Guid bankId,
-        MiniAppRequest request,
+        MiniAppDeleteBankRequest request,
         BankService bankService,
         CardImageStorage images,
         TelegramInitDataValidator validator,
@@ -919,7 +1039,7 @@ internal static class MiniAppApi
     private static async Task<IResult> DeleteBankCoreAsync(
         HttpContext httpContext,
         Guid? bankId,
-        MiniAppRequest request,
+        MiniAppDeleteBankRequest request,
         BankService bankService,
         CardImageStorage images,
         TelegramInitDataValidator validator,
@@ -928,6 +1048,11 @@ internal static class MiniAppApi
         if (!TryGetUser(httpContext, request.InitData, validator, out var userId, out _))
         {
             return Results.Unauthorized();
+        }
+
+        if (!BankDeletePasswordVerifier.Verify(request.Password))
+        {
+            return Results.BadRequest(new MiniAppActionResponse("Неверный пароль удаления."));
         }
 
         var bank = await bankService.GetMyBankAsync(userId, cancellationToken);
@@ -1031,6 +1156,8 @@ internal static class MiniAppApi
 
 internal sealed record MiniAppRequest(string InitData);
 
+internal sealed record MiniAppDeleteBankRequest(string InitData, string Password);
+
 internal sealed record MiniAppInviteResponse(string Code, DateTimeOffset ExpiresAt);
 
 internal sealed record MiniAppMenuResponse(
@@ -1101,7 +1228,26 @@ internal sealed record MiniAppCreditRequest(
     string InitData,
     long TargetTelegramUserId,
     string CurrencyCode,
-    decimal Amount);
+    decimal Amount,
+    string? Reason = null);
+
+internal sealed record MiniAppNotificationsCountResponse(int UnreadCount);
+
+internal sealed record MiniAppPurchasesRequest(string InitData, int Skip = 0, int Limit = 20);
+
+internal sealed record MiniAppPurchaseItem(
+    Guid Id,
+    string BuyerDisplayName,
+    long BuyerTelegramUserId,
+    string ProductName,
+    string CurrencyCode,
+    string CurrencyName,
+    decimal Amount,
+    DateTimeOffset OccurredAt);
+
+internal sealed record MiniAppPurchasesResponse(
+    IReadOnlyCollection<MiniAppPurchaseItem> Purchases,
+    bool HasMore);
 
 internal sealed record MiniAppFineRequest(
     string InitData,

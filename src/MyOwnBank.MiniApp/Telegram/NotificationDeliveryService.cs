@@ -9,15 +9,21 @@ public sealed class NotificationDeliveryService(
     IUserNotificationRepository repository,
     IClock clock)
 {
-    public Task DeliverCreditAsync(Guid bankId, CardCreditedNotification notification, CancellationToken cancellationToken) =>
-        DeliverAsync(
+    public Task DeliverCreditAsync(Guid bankId, CardCreditedNotification notification, CancellationToken cancellationToken)
+    {
+        var reasonSuffix = string.IsNullOrWhiteSpace(notification.Reason)
+            ? string.Empty
+            : $" Комментарий: {notification.Reason}";
+
+        return DeliverAsync(
             bankId,
             notification.RecipientTelegramUserId,
             "credit",
             "Начисление на карту",
-            $"На твою карту начислено {notification.Amount} {notification.CurrencyName} от {notification.IssuerDisplayName}.",
+            $"На твою карту начислено {notification.Amount} {notification.CurrencyName} от {notification.IssuerDisplayName}.{reasonSuffix}",
             telegram.SendCreditNotificationAsync(notification, cancellationToken),
             cancellationToken);
+    }
 
     public Task DeliverFineAsync(Guid bankId, CardFinedNotification notification, CancellationToken cancellationToken) =>
         DeliverAsync(
@@ -29,20 +35,28 @@ public sealed class NotificationDeliveryService(
             telegram.SendFineNotificationAsync(notification, cancellationToken),
             cancellationToken);
 
-    public Task DeliverPurchaseAsync(Guid bankId, ProductPurchasedNotification notification, CancellationToken cancellationToken)
+    public async Task DeliverPurchaseAsync(Guid bankId, ProductPurchasedNotification notification, CancellationToken cancellationToken)
     {
         var lines = notification.Items.Select(item =>
             $"{item.ProductName} ×{item.Quantity} — {item.Price * item.Quantity} {item.CurrencyName}");
         var message = $"{notification.BuyerDisplayName} купил в магазине: {string.Join(", ", lines)}";
 
-        return DeliverAsync(
-            bankId,
-            notification.OwnerTelegramUserId,
-            "purchase",
-            "Покупка в магазине",
-            message,
-            telegram.SendPurchaseNotificationAsync(notification, cancellationToken),
+        await repository.AddAsync(
+            new UserNotificationRecord(
+                Guid.NewGuid(),
+                notification.OwnerTelegramUserId,
+                bankId,
+                "purchase",
+                "Покупка в магазине",
+                message,
+                clock.UtcNow,
+                false),
             cancellationToken);
+
+        if (notification.BuyerTelegramUserId != notification.OwnerTelegramUserId)
+        {
+            await telegram.SendPurchaseNotificationAsync(notification, cancellationToken);
+        }
     }
 
     private async Task DeliverAsync(

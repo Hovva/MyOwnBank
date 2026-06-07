@@ -63,6 +63,34 @@ public sealed class InMemoryBankRepository : IBankRepository
         return Task.FromResult(((IReadOnlyList<BankTransaction>)transactions, hasMore));
     }
 
+    public Task<(IReadOnlyList<BankTransaction> Transactions, bool HasMore)> GetBankTransactionsByTypePageAsync(
+        Guid bankId,
+        string type,
+        int skip,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        if (!_banks.TryGetValue(bankId, out var bank) || take <= 0)
+        {
+            return Task.FromResult(((IReadOnlyList<BankTransaction>)[], false));
+        }
+
+        var transactions = bank.Transactions
+            .Where(transaction => string.Equals(transaction.Type, type, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(transaction => transaction.OccurredAt)
+            .Skip(skip)
+            .Take(take + 1)
+            .ToList();
+
+        var hasMore = transactions.Count > take;
+        if (hasMore)
+        {
+            transactions.RemoveAt(transactions.Count - 1);
+        }
+
+        return Task.FromResult(((IReadOnlyList<BankTransaction>)transactions, hasMore));
+    }
+
     public Task SaveAsync(Bank bank, CancellationToken cancellationToken)
     {
         _banks[bank.Id] = bank;

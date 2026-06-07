@@ -48,19 +48,41 @@ public sealed class BankTransaction
         Guid cardId,
         Money money,
         string recipientDisplayName,
-        DateTimeOffset now) =>
-        new(
+        DateTimeOffset now,
+        string? reason = null)
+    {
+        var trimmedReason = reason?.Trim();
+        var description = string.IsNullOrWhiteSpace(trimmedReason)
+            ? $"Начисление {recipientDisplayName}: {money.Amount} {money.CurrencyCode}"
+            : $"Начисление {recipientDisplayName}: {trimmedReason}";
+
+        return new(
             Guid.NewGuid(),
             bankId,
             cardId,
             "currency-issued",
             money.CurrencyCode,
             money.Amount,
-            $"Начисление {recipientDisplayName}: {money.Amount} {money.CurrencyCode}",
+            description,
             now);
+    }
 
-    public static BankTransaction Purchase(Guid bankId, Guid cardId, Money money, string productName, DateTimeOffset now) =>
-        new(Guid.NewGuid(), bankId, cardId, "purchase", money.CurrencyCode, -money.Amount, $"Purchased: {productName}", now);
+    public static BankTransaction Purchase(
+        Guid bankId,
+        Guid cardId,
+        Money money,
+        string productName,
+        string buyerDisplayName,
+        DateTimeOffset now) =>
+        new(
+            Guid.NewGuid(),
+            bankId,
+            cardId,
+            "purchase",
+            money.CurrencyCode,
+            -money.Amount,
+            $"Покупка {buyerDisplayName}: {productName}",
+            now);
 
     public static BankTransaction Fine(
         Guid bankId,

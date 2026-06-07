@@ -22,10 +22,13 @@ public sealed class TelegramNotificationSender(
         try
         {
             var bot = new TelegramBotClient(options.Value.Token);
+            var reasonLine = string.IsNullOrWhiteSpace(notification.Reason)
+                ? string.Empty
+                : $"\nКомментарий: {notification.Reason}";
             var text =
                 $"""
                  💳 На твою карту начислено {notification.Amount} {notification.CurrencyName} ({notification.CurrencyCode})
-                 от {notification.IssuerDisplayName}.
+                 от {notification.IssuerDisplayName}.{reasonLine}
 
                  Баланс: {FormatBalances(notification.NewBalances)}
                  """;

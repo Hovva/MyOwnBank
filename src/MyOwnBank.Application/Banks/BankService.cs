@@ -68,6 +68,32 @@ public sealed class BankService(
             page.HasMore);
     }
 
+    public async Task<TransactionsPageResult> GetMemberTransactionsPageAsync(
+        long ownerTelegramUserId,
+        Guid bankId,
+        long targetTelegramUserId,
+        int skip,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var bank = await repository.GetByIdLiteAsync(bankId, cancellationToken)
+            ?? throw new InvalidOperationException($"Bank '{bankId}' was not found.");
+
+        bank.EnsureOwner(ownerTelegramUserId);
+
+        var member = bank.Members.SingleOrDefault(item => item.TelegramUserId == targetTelegramUserId)
+            ?? throw new InvalidOperationException($"Member '{targetTelegramUserId}' was not found in this bank.");
+
+        var card = bank.Cards.SingleOrDefault(item => item.OwnerMemberId == member.Id)
+            ?? throw new InvalidOperationException("Member does not have a card yet.");
+
+        var page = await repository.GetCardTransactionsPageAsync(bankId, card.Id, skip, take, cancellationToken);
+
+        return new TransactionsPageResult(
+            page.Transactions.Select(ToTransactionSummary).ToArray(),
+            page.HasMore);
+    }
+
     public async Task<InviteCodeResult> CreateInviteCodeAsync(CreateInviteCodeCommand command, CancellationToken cancellationToken)
     {
         var bank = await GetUserBank(command.CreatedByTelegramUserId, cancellationToken);
@@ -140,10 +166,16 @@ public sealed class BankService(
         var card = bank.Cards.SingleOrDefault(item => item.OwnerMemberId == targetMember.Id)
             ?? bank.IssueCard(targetMember.Id, clock.UtcNow);
 
-        bank.CreditCard(card.Id, new Money(command.CurrencyCode, command.Amount), clock.UtcNow, targetMember.DisplayName);
+        bank.CreditCard(
+            card.Id,
+            new Money(command.CurrencyCode, command.Amount),
+            clock.UtcNow,
+            targetMember.DisplayName,
+            command.Reason);
 
         await repository.SaveAsync(bank, cancellationToken);
 
+        var trimmedReason = command.Reason?.Trim();
         CardCreditedNotification? notification = targetMember.TelegramUserId == command.IssuerTelegramUserId
             ? null
             : new CardCreditedNotification(
@@ -152,6 +184,7 @@ public sealed class BankService(
                 command.CurrencyCode,
                 ResolveCurrencyName(bank, command.CurrencyCode),
                 command.Amount,
+                string.IsNullOrWhiteSpace(trimmedReason) ? null : trimmedReason,
                 card.Balances);
 
         return new CreditResult(ToSummary(bank), notification);
@@ -245,7 +278,7 @@ public sealed class BankService(
 
         foreach (var snapshot in snapshots)
         {
-            bank.BuyProduct(card.Id, snapshot.Id, now);
+            bank.BuyProduct(card.Id, snapshot.Id, now, buyer.DisplayName);
         }
 
         await repository.SaveAsync(bank, cancellationToken);
@@ -260,15 +293,61 @@ public sealed class BankService(
                 group.Count()))
             .ToArray();
 
-        ProductPurchasedNotification? notification = buyer.TelegramUserId == bank.OwnerTelegramUserId
-            ? null
-            : new ProductPurchasedNotification(
-                bank.OwnerTelegramUserId,
-                buyer.DisplayName,
-                groupedItems,
-                card.Balances);
+        var notification = new ProductPurchasedNotification(
+            bank.OwnerTelegramUserId,
+            buyer.TelegramUserId,
+            buyer.DisplayName,
+            groupedItems,
+            card.Balances);
 
         return new BuyProductsResult(ToSummary(bank), notification);
+    }
+
+    public async Task<PurchasesPageResult> GetBankPurchasesPageAsync(
+        long ownerTelegramUserId,
+        Guid bankId,
+        int skip,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var bank = await repository.GetByIdLiteAsync(bankId, cancellationToken)
+            ?? throw new InvalidOperationException($"Bank '{bankId}' was not found.");
+
+        bank.EnsureOwner(ownerTelegramUserId);
+
+        var page = await repository.GetBankTransactionsByTypePageAsync(bankId, "purchase", skip, take, cancellationToken);
+        var purchases = page.Transactions
+            .Select(transaction =>
+            {
+                var card = bank.Cards.Single(item => item.Id == transaction.CardId);
+                var member = bank.Members.Single(item => item.Id == card.OwnerMemberId);
+                return new PurchaseHistoryItem(
+                    transaction.Id,
+                    member.DisplayName,
+                    member.TelegramUserId,
+                    ExtractPurchaseProductName(transaction.Description),
+                    transaction.CurrencyCode,
+                    ResolveCurrencyName(bank, transaction.CurrencyCode),
+                    Math.Abs(transaction.Amount),
+                    transaction.OccurredAt);
+            })
+            .ToArray();
+
+        return new PurchasesPageResult(purchases, page.HasMore);
+    }
+
+    private static string ExtractPurchaseProductName(string description)
+    {
+        const string legacyPrefix = "Purchased: ";
+        if (description.StartsWith(legacyPrefix, StringComparison.Ordinal))
+        {
+            return description[legacyPrefix.Length..];
+        }
+
+        var separatorIndex = description.IndexOf(": ", StringComparison.Ordinal);
+        return separatorIndex >= 0 && separatorIndex < description.Length - 2
+            ? description[(separatorIndex + 2)..]
+            : description;
     }
 
     public async Task<IReadOnlyCollection<ProductSummary>> GetShopAsync(long telegramUserId, CancellationToken cancellationToken)

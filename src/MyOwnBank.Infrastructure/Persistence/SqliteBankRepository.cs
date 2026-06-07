@@ -95,6 +95,51 @@ public sealed class SqliteBankRepository(IDbContextFactory<MyOwnBankDbContext> d
         return (transactions, hasMore);
     }
 
+    public async Task<(IReadOnlyList<BankTransaction> Transactions, bool HasMore)> GetBankTransactionsByTypePageAsync(
+        Guid bankId,
+        string type,
+        int skip,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        if (take <= 0)
+        {
+            return ([], false);
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var filtered = await db.BankTransactions
+            .AsNoTracking()
+            .Where(transaction => transaction.BankId == bankId && transaction.Type == type)
+            .ToListAsync(cancellationToken);
+
+        var entities = filtered
+            .OrderByDescending(transaction => transaction.OccurredAt)
+            .Skip(skip)
+            .Take(take + 1)
+            .ToList();
+
+        var hasMore = entities.Count > take;
+        if (hasMore)
+        {
+            entities.RemoveAt(entities.Count - 1);
+        }
+
+        var transactions = entities
+            .Select(item => BankTransaction.Rehydrate(
+                item.Id,
+                item.BankId,
+                item.CardId,
+                item.Type,
+                item.CurrencyCode,
+                item.Amount,
+                item.Description,
+                item.OccurredAt))
+            .ToArray();
+
+        return (transactions, hasMore);
+    }
+
     public async Task SaveAsync(Bank bank, CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);

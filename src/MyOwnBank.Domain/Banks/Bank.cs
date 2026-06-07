@@ -143,13 +143,28 @@ public sealed class Bank
         }
     }
 
-    public BankTransaction CreditCard(Guid cardId, Money money, DateTimeOffset now, string? recipientDisplayName = null)
+    public BankTransaction CreditCard(
+        Guid cardId,
+        Money money,
+        DateTimeOffset now,
+        string? recipientDisplayName = null,
+        string? reason = null)
     {
         EnsureCurrencyExists(money.CurrencyCode);
+
+        if (reason is not null)
+        {
+            var trimmedReason = reason.Trim();
+            if (trimmedReason.Length > 256)
+            {
+                throw new DomainException("Комментарий к начислению не длиннее 256 символов.");
+            }
+        }
+
         GetCard(cardId).Credit(money);
         var transaction = recipientDisplayName is null
             ? BankTransaction.CurrencyIssued(Id, cardId, money, now)
-            : BankTransaction.CurrencyIssuedToMember(Id, cardId, money, recipientDisplayName, now);
+            : BankTransaction.CurrencyIssuedToMember(Id, cardId, money, recipientDisplayName, now, reason);
         _transactions.Add(transaction);
 
         return transaction;
@@ -177,13 +192,13 @@ public sealed class Bank
         return transaction;
     }
 
-    public BankTransaction BuyProduct(Guid buyerCardId, Guid productId, DateTimeOffset now)
+    public BankTransaction BuyProduct(Guid buyerCardId, Guid productId, DateTimeOffset now, string buyerDisplayName)
     {
         var shop = Shop ?? throw new DomainException("Shop is not opened yet.");
         var product = shop.GetActiveProduct(productId);
 
         GetCard(buyerCardId).Debit(product.Price);
-        var transaction = BankTransaction.Purchase(Id, buyerCardId, product.Price, product.Name, now);
+        var transaction = BankTransaction.Purchase(Id, buyerCardId, product.Price, product.Name, buyerDisplayName, now);
         _transactions.Add(transaction);
 
         return transaction;

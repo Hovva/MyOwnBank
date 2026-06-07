@@ -16,7 +16,12 @@ public sealed record IssueCardCommand(Guid BankId, Guid OwnerMemberId);
 
 public sealed record CreditMyCardCommand(long TelegramUserId, string CurrencyCode, decimal Amount);
 
-public sealed record CreditMemberCardCommand(long IssuerTelegramUserId, string TargetMember, string CurrencyCode, decimal Amount);
+public sealed record CreditMemberCardCommand(
+    long IssuerTelegramUserId,
+    string TargetMember,
+    string CurrencyCode,
+    decimal Amount,
+    string? Reason = null);
 
 public sealed record CreditCardCommand(Guid BankId, Guid CardId, string CurrencyCode, decimal Amount);
 

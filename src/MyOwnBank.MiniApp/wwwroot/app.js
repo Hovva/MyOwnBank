@@ -5,6 +5,7 @@ const navHome = document.getElementById("nav-home");
 const navShop = document.getElementById("nav-shop");
 const navCart = document.getElementById("nav-cart");
 const navCartBadge = document.getElementById("nav-cart-badge");
+const navNotificationsBadge = document.getElementById("nav-notifications-badge");
 const navSeparators = [
     document.getElementById("nav-separator-1"),
     document.getElementById("nav-separator-2"),
@@ -120,6 +121,13 @@ const state = {
     notifications: [],
     notificationsHasMore: false,
     notificationsLoading: false,
+    purchases: [],
+    purchasesHasMore: false,
+    purchasesLoading: false,
+    viewedMember: null,
+    memberTransactions: [],
+    memberTransactionsHasMore: false,
+    memberTransactionsLoading: false,
     appSettingsReturnScreen: "menu",
     createBankReturnScreen: "menu"
 };
@@ -496,14 +504,66 @@ async function ensureSelectedBankLoaded() {
 }
 
 function syncNotificationBadge() {
-    const badge = document.getElementById("notification-badge");
-    if (!badge) {
+    const count = state.unreadNotifications || 0;
+    const label = count > 99 ? "99+" : String(count);
+
+    const headerBadge = document.getElementById("notification-badge");
+    if (headerBadge) {
+        headerBadge.textContent = label;
+        headerBadge.classList.toggle("is-hidden", count <= 0);
+    }
+
+    if (navNotificationsBadge) {
+        navNotificationsBadge.textContent = label;
+        navNotificationsBadge.classList.toggle("hidden", count <= 0);
+    }
+}
+
+let unreadRefreshPromise = null;
+
+async function refreshUnreadNotificationsSilently() {
+    if (unreadRefreshPromise) {
+        return unreadRefreshPromise;
+    }
+
+    unreadRefreshPromise = apiPost("/api/notifications/count")
+        .then(result => {
+            state.unreadNotifications = result.unreadCount ?? result.UnreadCount ?? 0;
+            syncNotificationBadge();
+        })
+        .catch(() => {})
+        .finally(() => {
+            unreadRefreshPromise = null;
+        });
+
+    return unreadRefreshPromise;
+}
+
+async function loadPurchasesPage({ reset = false } = {}) {
+    const bank = state.bank;
+    if (!bank?.id || !bank.canManage) {
         return;
     }
 
-    const count = state.unreadNotifications || 0;
-    badge.textContent = count > 99 ? "99+" : String(count);
-    badge.classList.toggle("is-hidden", count <= 0);
+    if (state.purchasesLoading) {
+        return;
+    }
+
+    state.purchasesLoading = true;
+    if (reset) {
+        state.purchases = [];
+    }
+
+    try {
+        const skip = reset ? 0 : state.purchases.length;
+        const result = await apiPost(`/api/banks/${bank.id}/purchases`, { skip, limit: 20 });
+        const items = result.purchases || result.Purchases || [];
+
+        state.purchases = reset ? items : [...state.purchases, ...items];
+        state.purchasesHasMore = Boolean(result.hasMore ?? result.HasMore);
+    } finally {
+        state.purchasesLoading = false;
+    }
 }
 
 function renderHeaderActions({ showNotifications = false } = {}) {
@@ -881,6 +941,7 @@ function updateNav() {
 
 function render() {
     updateNav();
+    void refreshUnreadNotificationsSilently();
 
     if (state.screen === "menu") {
         renderMenu();
@@ -944,7 +1005,64 @@ function render() {
 
     if (state.screen === "fine-add") {
         renderFineAdd();
+        return;
     }
+
+    if (state.screen === "member-card") {
+        renderMemberCard();
+    }
+}
+
+function renderBackLink({ id, label }) {
+    return `
+        <div class="screen-top-bar">
+            <button class="back-link" id="${id}" type="button">${label}</button>
+        </div>`;
+}
+
+function resetMemberTransactionsState() {
+    state.memberTransactions = [];
+    state.memberTransactionsHasMore = false;
+    state.memberTransactionsLoading = false;
+}
+
+async function loadMemberTransactionsPage({ reset = false } = {}) {
+    const bank = state.bank;
+    const member = state.viewedMember;
+    if (!bank?.id || !member?.telegramUserId) {
+        return;
+    }
+
+    if (state.memberTransactionsLoading) {
+        return;
+    }
+
+    state.memberTransactionsLoading = true;
+    if (reset) {
+        state.memberTransactions = [];
+    }
+
+    try {
+        const skip = reset ? 0 : state.memberTransactions.length;
+        const result = await apiPost(
+            `/api/banks/${bank.id}/members/${member.telegramUserId}/transactions`,
+            { skip, limit: 10 }
+        );
+        const items = result.transactions || result.Transactions || [];
+
+        state.memberTransactions = reset ? items : [...state.memberTransactions, ...items];
+        state.memberTransactionsHasMore = Boolean(result.hasMore ?? result.HasMore);
+    } finally {
+        state.memberTransactionsLoading = false;
+    }
+}
+
+async function openMemberCard(member) {
+    state.viewedMember = member;
+    resetMemberTransactionsState();
+    state.screen = "member-card";
+    await loadMemberTransactionsPage({ reset: true });
+    render();
 }
 
 function filterMembers(members, query) {
@@ -1005,7 +1123,7 @@ function renderCreateBankTrigger() {
 
 function renderCreateBank() {
     content.innerHTML = `
-        <button class="back-link" type="button" id="back-from-create-bank">← Назад</button>
+        ${renderBackLink({ id: "back-from-create-bank", label: "← Назад" })}
         <h2 class="section-title">Создание банка</h2>
         <form class="create-bank-form panel" id="create-bank-form">
             <label class="form-label" for="create-bank-name">Название банка</label>
@@ -1211,7 +1329,7 @@ function renderAppSettings() {
     const defaultName = state.menu?.displayName || "";
 
     content.innerHTML = `
-        <button class="back-link" type="button" id="back-from-app-settings">← Назад</button>
+        ${renderBackLink({ id: "back-from-app-settings", label: "← Назад" })}
         <h2 class="section-title">Настройки</h2>
         <div class="app-settings">
             <label class="form-label" for="app-display-name">Ваше имя</label>
@@ -1252,7 +1370,7 @@ function renderAppSettings() {
 
 function renderNotifications() {
     content.innerHTML = `
-        <button class="back-link" id="back-from-notifications" type="button">← Назад</button>
+        ${renderBackLink({ id: "back-from-notifications", label: "← Назад" })}
         ${renderPageHeader({ title: "Уведомления" })}
         <div class="panel notifications-panel">
             ${state.notifications.length === 0 && !state.notificationsLoading
@@ -1607,9 +1725,14 @@ function renderShop() {
 
     const shopSettingsButton = document.getElementById("open-shop-settings");
     if (shopSettingsButton) {
-        shopSettingsButton.addEventListener("click", () => {
+        shopSettingsButton.addEventListener("click", async () => {
             state.screen = "shop-settings";
-            render();
+            try {
+                await loadPurchasesPage({ reset: true });
+                render();
+            } catch (error) {
+                showError(error);
+            }
         });
     }
 
@@ -1742,7 +1865,7 @@ function renderShopSettings() {
     }
 
     content.innerHTML = `
-        <button class="back-link" id="back-to-shop" type="button">← Магазин</button>
+        ${renderBackLink({ id: "back-to-shop", label: "← Магазин" })}
         <h2 class="section-title">Управление магазином</h2>
 
         <div class="panel panel--stack">
@@ -1757,6 +1880,34 @@ function renderShopSettings() {
                     Добавить в магазин
                 </button>
             </form>
+        </div>
+
+        <div class="panel panel--stack">
+            <h2 class="section-title">История покупок</h2>
+            ${state.purchases.length === 0 && !state.purchasesLoading
+                ? '<p class="empty">Покупок пока нет</p>'
+                : state.purchases.map(item => {
+                    const meta = getCurrencyMeta(bank, item.currencyCode || item.CurrencyCode);
+                    return `
+                    <div class="purchase-item">
+                        <div class="purchase-item__head">
+                            <strong>${escapeHtml(item.buyerDisplayName || item.BuyerDisplayName)}</strong>
+                            <span class="hint">${formatDate(item.occurredAt || item.OccurredAt)}</span>
+                        </div>
+                        <div class="purchase-item__text">
+                            ${escapeHtml(item.productName || item.ProductName)}
+                            <span class="purchase-item__price">
+                                ${renderCurrencyIconDisplay(meta.icon, "purchase-item__icon")}
+                                ${item.amount ?? item.Amount} ${escapeHtml(item.currencyName || item.CurrencyName || meta.name)}
+                            </span>
+                        </div>
+                    </div>`;
+                }).join("")}
+            ${state.purchasesHasMore
+                ? `<button class="pill-button purchases-more-btn" id="load-more-purchases" type="button" ${state.purchasesLoading ? "disabled" : ""}>
+                    ${state.purchasesLoading ? "Загружаем…" : "Показать больше"}
+                </button>`
+                : ""}
         </div>`;
 
     bindCurrencySelects(content);
@@ -1765,6 +1916,18 @@ function renderShopSettings() {
         state.screen = "shop";
         render();
     });
+
+    const loadMorePurchases = document.getElementById("load-more-purchases");
+    if (loadMorePurchases) {
+        loadMorePurchases.addEventListener("click", async () => {
+            try {
+                await loadPurchasesPage();
+                renderShopSettings();
+            } catch (error) {
+                showError(error);
+            }
+        });
+    }
 
     document.getElementById("add-product-form").addEventListener("submit", async event => {
         event.preventDefault();
@@ -1793,8 +1956,27 @@ function renderSettings() {
         return;
     }
 
+    const members = bank.members || [];
+
     content.innerHTML = `
         <h2 class="section-title">Управление банком</h2>
+
+        <div class="panel">
+            <h2 class="section-title">Участники</h2>
+            <div class="member-list">
+                ${members.length === 0
+                    ? '<p class="empty">Участников пока нет</p>'
+                    : members.map(member => `
+                        <button class="member-card" type="button" data-view-member-id="${member.telegramUserId}">
+                            <div class="member-card__head">
+                                <strong>${escapeHtml(member.displayName)}</strong>
+                                ${member.isOwner ? '<span class="owner-badge">Owner</span>' : ""}
+                            </div>
+                            <div class="hint">id: ${member.telegramUserId}</div>
+                            <div class="member-card__balances">${renderMemberBalances(bank, member.balances)}</div>
+                        </button>`).join("")}
+            </div>
+        </div>
 
         <div class="panel compact-panel">
             <div class="compact-panel__text">
@@ -1903,15 +2085,39 @@ function renderSettings() {
             <div class="modal-card" role="alertdialog" aria-modal="true">
                 <div class="modal-icon">${icon("attention", { bg: true, size: 32, bgColor: "var(--danger-soft)", color: "var(--danger-dark)" })}</div>
                 <h3 class="modal-title modal-title--danger">Удалить «${escapeHtml(bank.name)}»?</h3>
-                <p class="modal-text" id="delete-bank-text">Действие нельзя отменить. Подтверждение будет доступно через 5 сек.</p>
+                <p class="modal-text" id="delete-bank-text">Действие нельзя отменить. Введите пароль удаления.</p>
+                <label class="modal-password-field">
+                    <span class="modal-password-label">Пароль</span>
+                    <input
+                        class="modal-password-input"
+                        id="delete-bank-password"
+                        type="password"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        maxlength="16"
+                        placeholder="••••">
+                </label>
+                <p class="modal-error hidden" id="delete-bank-error"></p>
                 <div class="modal-actions">
                     <button class="modal-btn modal-btn--cancel" id="cancel-delete-bank" type="button">Отмена</button>
                     <button class="modal-btn modal-btn--danger" id="confirm-delete-bank" type="button" disabled>
-                        <span id="confirm-delete-label">Удалить (5)</span>
+                        <span id="confirm-delete-label">Удалить</span>
                     </button>
                 </div>
             </div>
         </div>`;
+
+    content.querySelectorAll("[data-view-member-id]").forEach(button => {
+        button.addEventListener("click", () => {
+            const memberId = Number(button.dataset.viewMemberId);
+            const member = (bank.members || []).find(item => item.telegramUserId === memberId);
+            if (!member) {
+                return;
+            }
+
+            openMemberCard(member).catch(showError);
+        });
+    });
 
     document.getElementById("open-credit-users").addEventListener("click", () => {
         state.creditMember = null;
@@ -2119,43 +2325,35 @@ function setupDeleteBank(bank) {
     const cancelButton = document.getElementById("cancel-delete-bank");
     const confirmButton = document.getElementById("confirm-delete-bank");
     const confirmLabel = document.getElementById("confirm-delete-label");
-    if (!modal || !openButton || !cancelButton || !confirmButton || !confirmLabel) {
+    const passwordInput = document.getElementById("delete-bank-password");
+    const errorText = document.getElementById("delete-bank-error");
+    if (!modal || !openButton || !cancelButton || !confirmButton || !confirmLabel || !passwordInput) {
         return;
     }
 
-    let countdownTimer = null;
-
-    const closeModal = () => {
-        if (countdownTimer) {
-            clearInterval(countdownTimer);
-            countdownTimer = null;
+    const updateConfirmState = () => {
+        const hasPassword = passwordInput.value.trim().length > 0;
+        confirmButton.disabled = !hasPassword;
+        if (errorText) {
+            errorText.classList.add("hidden");
+            errorText.textContent = "";
         }
-        modal.classList.add("hidden");
-        confirmButton.disabled = true;
     };
 
-    const startCountdown = () => {
-        let remaining = 5;
-        confirmButton.disabled = true;
-        confirmLabel.textContent = `Удалить (${remaining})`;
-        countdownTimer = setInterval(() => {
-            remaining -= 1;
-            if (remaining > 0) {
-                confirmLabel.textContent = `Удалить (${remaining})`;
-                return;
-            }
-
-            clearInterval(countdownTimer);
-            countdownTimer = null;
-            confirmButton.disabled = false;
-            confirmLabel.textContent = "Удалить";
-        }, 1000);
+    const closeModal = () => {
+        modal.classList.add("hidden");
+        passwordInput.value = "";
+        updateConfirmState();
     };
 
     openButton.addEventListener("click", () => {
         modal.classList.remove("hidden");
-        startCountdown();
+        passwordInput.value = "";
+        updateConfirmState();
+        passwordInput.focus();
     });
+
+    passwordInput.addEventListener("input", updateConfirmState);
 
     cancelButton.addEventListener("click", closeModal);
     modal.addEventListener("click", event => {
@@ -2169,22 +2367,94 @@ function setupDeleteBank(bank) {
             return;
         }
 
+        const password = passwordInput.value.trim();
+        if (!password) {
+            return;
+        }
+
         confirmButton.disabled = true;
         confirmLabel.textContent = "Удаляем…";
         try {
-            await apiPost("/api/banks/delete");
+            await apiPost("/api/banks/delete", { password });
             closeModal();
             await redirectToProfile(true);
         } catch (error) {
-            closeModal();
+            confirmButton.disabled = false;
+            confirmLabel.textContent = "Удалить";
+
             if (isNotFoundError(error)) {
+                closeModal();
                 await redirectToProfile(true);
                 return;
             }
 
-            showError(error);
+            const message = error?.message || "Не удалось удалить банк.";
+            if (errorText) {
+                errorText.textContent = message;
+                errorText.classList.remove("hidden");
+            } else {
+                showError(error);
+            }
         }
     });
+}
+
+function renderMemberCard() {
+    const bank = state.bank;
+    const member = (bank?.members || []).find(item => item.telegramUserId === state.viewedMember?.telegramUserId)
+        || state.viewedMember;
+
+    if (!bank?.canManage || !member) {
+        state.screen = "settings";
+        render();
+        return;
+    }
+
+    state.viewedMember = member;
+
+    content.innerHTML = `
+        ${renderBackLink({ id: "back-to-settings-from-member", label: "← Управление" })}
+        <h2 class="section-title">Карта участника</h2>
+
+        <div class="panel highlight-card">
+            <div class="member-card__head">
+                <strong>${escapeHtml(member.displayName)}</strong>
+                ${member.isOwner ? '<span class="owner-badge">Owner</span>' : ""}
+            </div>
+            <div class="hint">id: ${member.telegramUserId}</div>
+            <div class="member-card__balances">${renderMemberBalances(bank, member.balances)}</div>
+        </div>
+
+        <div class="panel">
+            <h2 class="section-title">Операции</h2>
+            ${state.memberTransactions.length === 0 && !state.memberTransactionsLoading
+                ? '<p class="empty">Операций пока нет</p>'
+                : state.memberTransactions.map(tx => renderTransactionItem(tx, bank)).join("")}
+            ${state.memberTransactionsHasMore
+                ? `<button class="pill-button transactions-more-btn" id="load-more-member-transactions" type="button" ${state.memberTransactionsLoading ? "disabled" : ""}>
+                    ${state.memberTransactionsLoading ? "Загружаем…" : "Показать больше"}
+                </button>`
+                : ""}
+        </div>`;
+
+    document.getElementById("back-to-settings-from-member").addEventListener("click", () => {
+        state.viewedMember = null;
+        resetMemberTransactionsState();
+        state.screen = "settings";
+        render();
+    });
+
+    const loadMoreButton = document.getElementById("load-more-member-transactions");
+    if (loadMoreButton) {
+        loadMoreButton.addEventListener("click", async () => {
+            try {
+                await loadMemberTransactionsPage();
+                renderMemberCard();
+            } catch (error) {
+                showError(error);
+            }
+        });
+    }
 }
 
 function renderCreditUsers() {
@@ -2197,7 +2467,7 @@ function renderCreditUsers() {
     const members = filterMembers(bank.members || [], state.memberSearch);
 
     content.innerHTML = `
-        <button class="back-link" id="back-to-settings" type="button">← Управление</button>
+        ${renderBackLink({ id: "back-to-settings", label: "← Управление" })}
         <h2 class="section-title">Участники</h2>
 
         <div class="search-field">
@@ -2271,7 +2541,7 @@ function renderCreditAdd() {
     }
 
     content.innerHTML = `
-        <button class="back-link" id="back-to-credit-users" type="button">← Участники</button>
+        ${renderBackLink({ id: "back-to-credit-users", label: "← Участники" })}
         <h2 class="section-title">Начисление</h2>
 
         <div class="panel highlight-card">
@@ -2288,6 +2558,9 @@ function renderCreditAdd() {
 
             <label class="form-label" for="credit-amount">Сумма</label>
             <input id="credit-amount" name="amount" type="number" min="0.01" step="0.01" placeholder="Сколько начислить" required>
+
+            <label class="form-label" for="credit-reason">Комментарий</label>
+            <textarea id="credit-reason" name="reason" placeholder="За что начислено (необязательно)" maxlength="256" rows="3"></textarea>
 
             <button class="submit-button" type="submit">
                 ${icon("add", { size: 18, color: "#fff" })}
@@ -2312,11 +2585,14 @@ function renderCreditAdd() {
             return;
         }
 
+        const reason = data.get("reason")?.toString().trim();
+
         try {
             await apiPost(`/api/banks/${bank.id}/credit`, {
                 targetTelegramUserId: member.telegramUserId,
                 currencyCode: data.get("currencyCode"),
-                amount
+                amount,
+                reason: reason || null
             });
             await refreshBank();
             state.creditMember = (state.bank.members || []).find(item => item.telegramUserId === member.telegramUserId) || null;
@@ -2338,7 +2614,7 @@ function renderFineUsers() {
     const members = filterMembers(bank.members || [], state.memberSearch);
 
     content.innerHTML = `
-        <button class="back-link" id="back-to-settings" type="button">← Управление</button>
+        ${renderBackLink({ id: "back-to-settings", label: "← Управление" })}
         <h2 class="section-title">Штраф — участник</h2>
 
         <div class="search-field">
@@ -2412,7 +2688,7 @@ function renderFineAdd() {
     }
 
     content.innerHTML = `
-        <button class="back-link" id="back-to-fine-users" type="button">← Участники</button>
+        ${renderBackLink({ id: "back-to-fine-users", label: "← Участники" })}
         <h2 class="section-title">Выписка штрафа</h2>
 
         <div class="panel highlight-card">
@@ -2538,7 +2814,14 @@ content.addEventListener("click", event => {
     }
 });
 
-navBanks.addEventListener("click", () => loadMenu().catch(showError));
+navBanks.addEventListener("click", () => {
+    if (state.unreadNotifications > 0 && state.screen !== "menu" && state.screen !== "notifications") {
+        openNotifications().catch(showError);
+        return;
+    }
+
+    loadMenu().catch(showError);
+});
 
 navHome.addEventListener("click", () => {
     if (!state.selectedBankId) {

@@ -43,6 +43,20 @@ public sealed record TransactionsPageResult(
     IReadOnlyCollection<TransactionSummary> Transactions,
     bool HasMore);
 
+public sealed record PurchaseHistoryItem(
+    Guid Id,
+    string BuyerDisplayName,
+    long BuyerTelegramUserId,
+    string ProductName,
+    string CurrencyCode,
+    string CurrencyName,
+    decimal Amount,
+    DateTimeOffset OccurredAt);
+
+public sealed record PurchasesPageResult(
+    IReadOnlyCollection<PurchaseHistoryItem> Purchases,
+    bool HasMore);
+
 public sealed record InviteCodeResult(string Code, DateTimeOffset ExpiresAt);
 
 public sealed record CardCreditedNotification(
@@ -51,6 +65,7 @@ public sealed record CardCreditedNotification(
     string CurrencyCode,
     string CurrencyName,
     decimal Amount,
+    string? Reason,
     IReadOnlyDictionary<string, decimal> NewBalances);
 
 public sealed record CreditResult(BankSummary Bank, CardCreditedNotification? Notification);
@@ -75,6 +90,7 @@ public sealed record PurchasedItemSummary(
 
 public sealed record ProductPurchasedNotification(
     long OwnerTelegramUserId,
+    long BuyerTelegramUserId,
     string BuyerDisplayName,
     IReadOnlyList<PurchasedItemSummary> Items,
     IReadOnlyDictionary<string, decimal> BuyerNewBalances);

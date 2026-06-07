@@ -22,6 +22,13 @@ public interface IBankRepository
         int take,
         CancellationToken cancellationToken);
 
+    Task<(IReadOnlyList<BankTransaction> Transactions, bool HasMore)> GetBankTransactionsByTypePageAsync(
+        Guid bankId,
+        string type,
+        int skip,
+        int take,
+        CancellationToken cancellationToken);
+
     Task SaveAsync(Bank bank, CancellationToken cancellationToken);
 
     Task DeleteAsync(Guid bankId, CancellationToken cancellationToken);

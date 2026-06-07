@@ -42,7 +42,7 @@ public sealed class BankTests
         var product = shop.AddProduct("Real reward", new("kiss", 3), DateTimeOffset.UtcNow);
 
         bank.CreditCard(card.Id, new("kiss", 5), DateTimeOffset.UtcNow);
-        bank.BuyProduct(card.Id, product.Id, DateTimeOffset.UtcNow);
+        bank.BuyProduct(card.Id, product.Id, DateTimeOffset.UtcNow, "alice");
 
         Assert.Equal(2, card.Balances["kiss"]);
     }
@@ -73,7 +73,7 @@ public sealed class BankTests
         var product = shop.AddProduct("Real kiss", new("kiss", 3), now);
 
         bank.CreditCard(card.Id, new("kiss", 5), now);
-        bank.BuyProduct(card.Id, product.Id, now);
+        bank.BuyProduct(card.Id, product.Id, now, "Owner");
 
         var transaction = bank.Transactions.Last();
         Assert.Equal(card.Id, transaction.CardId);
@@ -115,6 +115,6 @@ public sealed class BankTests
         var shop = bank.OpenShop(DateTimeOffset.UtcNow);
         var product = shop.AddProduct("Real reward", new("kiss", 3), DateTimeOffset.UtcNow);
 
-        Assert.Throws<DomainException>(() => bank.BuyProduct(card.Id, product.Id, DateTimeOffset.UtcNow));
+        Assert.Throws<DomainException>(() => bank.BuyProduct(card.Id, product.Id, DateTimeOffset.UtcNow, "alice"));
     }
 }
