@@ -66,7 +66,7 @@ public sealed class SqliteBankRepository(IDbContextFactory<MyOwnBankDbContext> d
         var entities = await db.BankTransactions
             .AsNoTracking()
             .Where(transaction => transaction.BankId == bankId && transaction.CardId == cardId)
-            .OrderByDescending(transaction => transaction.OccurredAt)
+            .OrderByDescending(transaction => transaction.OccurredAt.UtcDateTime)
             .Skip(skip)
             .Take(take + 1)
             .ToListAsync(cancellationToken);

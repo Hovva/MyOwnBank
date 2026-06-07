@@ -48,7 +48,7 @@ public sealed class SqliteUserNotificationRepository(IDbContextFactory<MyOwnBank
         var entities = await db.UserNotifications
             .AsNoTracking()
             .Where(item => item.RecipientTelegramUserId == recipientTelegramUserId)
-            .OrderByDescending(item => item.CreatedAt)
+            .OrderByDescending(item => item.CreatedAt.UtcDateTime)
             .Skip(skip)
             .Take(take + 1)
             .ToListAsync(cancellationToken);
